@@ -141,7 +141,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD",dst=/taintp2x \
   --workdir /taintp2x taintp2x:typescript bash -lc \
   'node Source_Identification/analyze_typescript_sources.js \
-    <SOURCE_DIR> <SOURCE_DIR>/source/analysis_source_typescript.json'
+    <SOURCE_DIR> <SOURCE_DIR>/source/analysis_source_<TARGET_NAME>.json'
 ```
 
 `Source_Identification/analyze_typescript_sources.js` 使用官方 Compiler API 遍历 `.ts`、`.tsx`、`.js` 和 `.jsx` AST，输出与 Python 管线兼容的 `assignments`、`attribute_uses`，同时保留模块、函数源码和行号。候选识别只负责定位可能的模型 SDK 调用，不把候选直接当成最终 Source。
@@ -154,10 +154,10 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --workdir /taintp2x taintp2x:typescript bash -lc \
   'node Source_Identification/analyze_typescript_sources.js \
     .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6 \
-    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/analysis_source_typescript.json'
+    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/analysis_source_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json'
 ```
 
-本次扫描输出 81 个 TypeScript Source 候选，结果文件为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/analysis_source_typescript.json`。
+本次扫描输出 81 个 TypeScript Source 候选，结果文件为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/analysis_source_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json`。
 
 ### TypeScript Step 6：模型确认并生成 CodeQL Source 清单
 
@@ -173,7 +173,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   -e OPENAI_EXTRA_BODY='{"thinking":{"type":"disabled"}}' \
   taintp2x:typescript bash -lc \
   'python -m Source_Identification.confirm_typescript_source \
-    <ANALYSIS_JSON> <LLM_ANALYSIS_JSON>'
+    <SOURCE_DIR> [--limit <N>]'
 ```
 
 确认阶段沿用 `Source_Identification/llm_client.py` 的 OpenAI-compatible 适配；适配代码仍在该文件，替换其他远程模型时只需调整环境变量或该通用请求适配。确认完成后，`make_codeql_sources.py` 将 `is_llm_call=true` 的记录输出成可审计 Source 清单。
@@ -181,7 +181,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
 本次测试使用 DeepSeek 官方 API（`https://api.deepseek.com`、模型 `deepseek-v4-flash`、thinking disabled），对 3 个候选进行了实际确认，生成：
 
 ```text
-.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/llm_analysis_typescript.json
+.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/llm_analysis_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json
 .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json
 ```
 
@@ -198,7 +198,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   'python scripts/run_typescript_codeql.py --config TYPESCRIPT_REPRODUCTION_CONFIG.json'
 ```
 
-`scripts/run_typescript_codeql.py` 会先从 `CodeQL_Models/taintp2x_models.json` 生成 `CodeQL_Queries/TaintP2XModels.qll`，再按配置创建数据库（已存在时可传 `--skip-create`），最后执行固定的 `CodeQL_Queries/TaintP2X.ql` 并写出 SARIF。查询只实现一次通用 Source → Sink 连通性求解；API、Source、Sink、Sanitizer 和传播规则均来自模型清单，不依赖仓库名或具体 CVE。
+`scripts/run_typescript_codeql.py` 会在已有 Source Identification artifact 时跳过确认阶段，从 `CodeQL_Models/taintp2x_models.json` 生成 `CodeQL_Queries/TaintP2XModels.qll`，按配置创建数据库，最后执行固定的 `CodeQL_Queries/TaintP2X.ql` 并写出 SARIF。查询只实现一次通用 Source → Sink 连通性求解；API、Source、Sink、Sanitizer 和传播规则均来自模型清单，不依赖仓库名或具体 CVE。
 
 本次实际运行使用：
 
@@ -209,10 +209,10 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --mount type=bind,src="/data/AgentSecStudy/tools/iris/.workspace/codeql-repo",dst=/taintp2x/.workspace/codeql-repo,readonly \
   --workdir /taintp2x taintp2x:typescript bash -lc \
   'python scripts/run_typescript_codeql.py \
-    --config TYPESCRIPT_REPRODUCTION_CONFIG.json --skip-create'
+    --config TYPESCRIPT_REPRODUCTION_CONFIG.json'
 ```
 
-本次测试沿用已创建的 `.workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2025-55346_2.2.6` 数据库，输出 `.workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif`。
+本次测试按配置重新创建了 `.workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2025-55346_2.2.6` 数据库，输出 `.workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif`。
 
 ### TypeScript 结果格式和校验
 
@@ -239,7 +239,7 @@ python scripts/validate_codeql_results.py \
   --workers 4
 ```
 
-本次 Flowise 测试对包含 `RemoteCodeExecution` 的告警实际执行后验证：DeepSeek 返回 `LLM-in-the-Loop`，入口为 `nodeData.inputs.customToolSchema`，利用链到 `CustomTool.ts:121` 的 `new Function`，单条报告保存在 `.workspace/codeql-validation/flowise.md`。随后去掉 `--contains` 对全部 72 条告警完成后验证，报告为 `.workspace/codeql-validation/flowise-all.md`，其中 `LLM-in-the-Loop` 6 条、`traditional` 3 条、`Not-Sure` 63 条。
+本次 Flowise 测试对包含 `RemoteCodeExecution` 的告警实际执行后验证，单条报告保存在 `.workspace/codeql-validation/flowise-retest.md`。随后去掉 `--contains` 对全部 72 条告警完成后验证，报告为 `.workspace/codeql-validation/flowise-retest-all.md`，成功后验证 72/72，其中 `LLM-in-the-Loop` 20 条、`traditional` 33 条、`Not-Sure` 19 条。
 
 ### TypeScript 清理
 

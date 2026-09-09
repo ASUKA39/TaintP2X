@@ -12,7 +12,7 @@ module TaintP2XModels {
 
   class LLMControlledSource extends TaintP2XSource {
     LLMControlledSource() {
-      exists(DataFlow::CallNode call | (call.getCalleeName() in ["invoke", "ainvoke", "generate", "agenerate", "complete", "acomplete", "call", "chat", "stream", "generateContent", "createChatCompletion"] and this = call))
+      exists(DataFlow::CallNode call | (call.getCalleeName() in ["acomplete", "agenerate", "ainvoke", "call", "chat", "complete", "createChatCompletion", "generate", "generateContent", "invoke", "stream"] and this = call))
       or
       exists(DataFlow::PropRead read | (read.getPropertyName() in ["content", "text", "response", "output", "customToolSchema"] and this = read))
     }

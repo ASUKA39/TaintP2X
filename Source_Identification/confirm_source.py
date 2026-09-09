@@ -200,7 +200,7 @@ def construct_full_method_path(project_name: str, method_info: Dict, language: s
     return full_method_path
 
 
-def run_confirm_source(project_root, language="python"):
+def run_confirm_source(project_root, language="python", limit=0):
 
     project_name = os.path.basename(project_root)
 
@@ -211,6 +211,8 @@ def run_confirm_source(project_root, language="python"):
     print("--------------------------------------------------")
 
     methods_to_analyze = extract_method_implementations(json_file, language)
+    if limit > 0:
+        methods_to_analyze = methods_to_analyze[:limit]
 
     all_analysis_results = []
 
