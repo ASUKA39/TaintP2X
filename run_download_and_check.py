@@ -32,7 +32,9 @@ def run_codeql_check(folder, config):
     codeql_repo = os.path.join(root, config["codeql_repo"])
     manifest = os.path.join(root, config["models_manifest"])
     generated_models = os.path.join(root, config["generated_models"])
-    source_records = config.get("source_records")
+    source_records = config.get(
+        "source_records", os.path.join(folder, "source", "codeql_sources.json")
+    )
     if source_records:
         source_records = os.path.join(root, source_records)
 
@@ -118,6 +120,32 @@ def run_pysa_check(folder, backend="pysa", config=None):
                     return True
     return False
 
+
+def run_project_pipeline(folder, language="python", backend="pysa", config=None):
+    """Run source identification, confirmation, model generation and checking.
+
+    This is the language-port entry point; each stage delegates to the original
+    module and only the language/backend arguments change.
+    """
+    from Source_Identification.analyze_assignments import run_analysis
+    from Source_Identification.confirm_source import run_confirm_source
+    from Source_Identification.make_pysa_source import extract_and_format_llm_paths
+
+    run_analysis(folder, language=language)
+    run_confirm_source(folder, language=language)
+    project_name = os.path.basename(folder)
+    analysis_file = os.path.join(folder, "source", f"llm_analysis_{project_name}.json")
+    if backend.lower() == "codeql":
+        output_file = (config or {}).get(
+            "source_records", os.path.join(folder, "source", "codeql_sources.json")
+        )
+        if config and not os.path.isabs(output_file):
+            output_file = os.path.join(config.get("project_root", os.getcwd()), output_file)
+    else:
+        output_file = os.path.join(folder, "source", f"self_llm_source_{project_name}.pysa")
+    extract_and_format_llm_paths(analysis_file, output_file, backend=backend)
+    return run_pysa_check(folder, backend=backend, config=config)
+
 def backup_checked_repos(checked_repos_file):
     """备份检查记录文件"""
     if os.path.exists(checked_repos_file):
@@ -193,90 +221,70 @@ def process_github_repo(repo, download_dir, max_retries=3, language="python", ba
                 shutil.rmtree(target_dir)
                 return False
                 
-            # 调用 analyze_assignments.py 进行分析
-            try:
-                # 导入 analyze_assignments 模块
-                from Source_Identification.analyze_assignments import run_analysis
-                print(f"开始对仓库 {full_repo_name} 进行 AST 分析...")
-                # 调用 run_analysis 函数，传入下载的仓库路径
-                run_analysis(target_dir, language=language)
-                print(f"仓库 {full_repo_name} 的 AST 分析完成。")
-            except ImportError:
-                print("错误: 无法导入 analyze_assignments 模块。请确保 analyze_assignments.py 在正确的路径下。")
-            except Exception as e:
-                print(f"对仓库 {full_repo_name} 进行 AST 分析时发生错误: {str(e)}")
-
-            # 调用 confirm_source.py 进行检查
-            try:
-                from Source_Identification.confirm_source import run_confirm_source
-                print(f"开始对仓库 {full_repo_name} 进行 LLM 调用确认...")
-                # project_name 可以从 full_repo_name 获取
-                run_confirm_source(target_dir, language=language)
-                print(f"仓库 {full_repo_name} 的 LLM 调用确认完成。")
-            except ImportError:
-                print("错误: 无法导入 confirm_source 模块。请确保 confirm_source.py 在正确的路径下。")
-            except Exception as e:
-                print(f"对仓库 {full_repo_name} 进行 LLM 调用确认时发生错误: {str(e)}")
-
-            # 调用 make_pysa_source.py 生成 pysa source
-            try:
-                from Source_Identification.make_pysa_source import extract_and_format_llm_paths
-                print(f"开始为仓库 {full_repo_name} 生成 Pysa Source...")
-                project_name = unique_dir_name # project_name 就是 unique_dir_name
-                json_file = f'{target_dir}/source/llm_analysis_{project_name}.json'
-                if backend.lower() == "codeql":
-                    output_file = (config or {}).get(
-                        "source_records",
-                        f'{target_dir}/source/codeql_sources.json',
-                    )
-                    if config and not os.path.isabs(output_file):
-                        output_file = os.path.join(
-                            config.get("project_root", os.getcwd()), output_file
-                        )
-                else:
-                    output_file = f'{target_dir}/source/self_llm_source_{project_name}.pysa'
-                extract_and_format_llm_paths(json_file, output_file, backend=backend)
-                print(f"仓库 {full_repo_name} 的 {backend} Source 生成完成。")
-            except ImportError:
-                print("错误: 无法导入 make_pysa_source 模块。请确保 make_pysa_source.py 在正确的路径下。")
-            except Exception as e:
-                print(f"为仓库 {full_repo_name} 生成 Pysa Source 时发生错误: {str(e)}")
-
-            # 检查是否有问题
-            has_issue = run_pysa_check(target_dir, backend=backend, config=config)
+            print(f"开始运行 {language}/{backend} 分析流水线...")
+            has_issue = run_project_pipeline(
+                target_dir, language=language, backend=backend, config=config
+            )
 
             if has_issue:
-                try:
-                    # 集成 LLM 验证
-                    import sys
-                    llm_val_dir = os.path.abspath("LLM-assisted_Validation")
-                    if llm_val_dir not in sys.path:
-                        sys.path.append(llm_val_dir)
-                    
-                    from ds_llm_source_determine_mul import SourceDeterminer
-                    from ds_llm_fully_determine_mul import FullyDeterminer
-                    
-                    print(f"开始对仓库 {full_repo_name} 进行 LLM 深度验证...")
-                    log_dir = os.path.abspath("./llm_validation_logs")
-                    if not os.path.exists(log_dir): os.makedirs(log_dir)
-                    
-                    # 实例化
-                    source_determiner = SourceDeterminer(os.path.abspath(download_dir), log_dir)
-                    fully_determiner = FullyDeterminer(os.path.abspath(download_dir), log_dir)
-                    
-                    taint_output_file = os.path.abspath(f"./pysa_result/pysa-runs_{unique_dir_name}/taint-output.json")
-                    
-                    if os.path.exists(taint_output_file):
-                        source_determiner.process_project(unique_dir_name, taint_output_file)
-                        fully_determiner.process_project(unique_dir_name, taint_output_file, log_dir)
-                        print(f"仓库 {full_repo_name} 的 LLM 深度验证完成。")
-                    else:
-                        print(f"警告: 未找到污点分析结果文件 {taint_output_file}")
+                if backend.lower() == "codeql":
+                    try:
+                        project_root = os.path.abspath((config or {}).get("project_root", "."))
+                        sarif_file = os.path.join(
+                            project_root,
+                            (config or {}).get(
+                                "codeql_output",
+                                ".workspace/codeql-results/" + os.path.basename(
+                                    (config or {}).get("codeql_database", unique_dir_name)
+                                ) + ".sarif",
+                            ),
+                        )
+                        report_file = os.path.join(
+                            project_root,
+                            ".workspace/codeql-validation",
+                            unique_dir_name + ".md",
+                        )
+                        subprocess.run([
+                            "python",
+                            os.path.join(project_root, "scripts", "validate_codeql_results.py"),
+                            "--sarif", sarif_file,
+                            "--source-root", target_dir,
+                            "--output", report_file,
+                            "--language", language,
+                        ], check=True)
+                    except Exception as e:
+                        print(f"CodeQL LLM 验证出错: {e}")
+                else:
+                    try:
+                        # 集成 LLM 验证
+                        import sys
+                        llm_val_dir = os.path.abspath("LLM-assisted_Validation")
+                        if llm_val_dir not in sys.path:
+                            sys.path.append(llm_val_dir)
+
+                        from ds_llm_source_determine_mul import SourceDeterminer
+                        from ds_llm_fully_determine_mul import FullyDeterminer
+
+                        print(f"开始对仓库 {full_repo_name} 进行 LLM 深度验证...")
+                        log_dir = os.path.abspath("./llm_validation_logs")
+                        if not os.path.exists(log_dir): os.makedirs(log_dir)
+
+                        source_determiner = SourceDeterminer(os.path.abspath(download_dir), log_dir)
+                        fully_determiner = FullyDeterminer(os.path.abspath(download_dir), log_dir)
+
+                        taint_output_file = os.path.abspath(f"./pysa_result/pysa-runs_{unique_dir_name}/taint-output.json")
+
+                        if os.path.exists(taint_output_file):
+                            source_determiner.process_project(unique_dir_name, taint_output_file)
+                            fully_determiner.process_project(unique_dir_name, taint_output_file, log_dir)
+                            print(f"仓库 {full_repo_name} 的 LLM 深度验证完成。")
+                        else:
+                            print(f"警告: 未找到污点分析结果文件 {taint_output_file}")
                         
-                except Exception as e:
-                    print(f"LLM 验证出错: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    except Exception as e:
+                        print(f"LLM 验证出错: {e}")
+                        import traceback
+                        traceback.print_exc()
             
             # 使用文件锁更新检查记录
             with file_lock:

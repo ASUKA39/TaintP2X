@@ -22,7 +22,9 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from Source_Identification.llm_client import LLMClient
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "LLM-assisted_Validation"))
+from ds_llm_source_determine_mul import SourceDeterminer
+from ds_llm_fully_determine_mul import FullyDeterminer
 
 
 PROMPT = """You are a software security expert performing a static audit. Do not run code and do not assume runtime behavior.
@@ -89,10 +91,15 @@ def parse_response(response: dict[str, Any]) -> dict[str, Any]:
     if not content:
         raise ValueError("model response has no message content")
     parsed = json.loads(content)
-    required = {"is_vulnerability", "classification", "attacker_entry_point", "exploit_chain", "reason", "sanitized"}
-    missing = required - parsed.keys()
-    if missing:
-        raise ValueError(f"model response missing fields: {sorted(missing)}")
+    if not isinstance(parsed, dict):
+        raise ValueError("model response is not a JSON object")
+    parsed.setdefault("is_vulnerability", False)
+    parsed.setdefault("attacker_entry_point", "Not-Sure")
+    parsed.setdefault("exploit_chain", "Not-Sure")
+    parsed.setdefault("reason", "No additional rationale returned.")
+    parsed.setdefault("sanitized", False)
+    if "classification" not in parsed:
+        raise ValueError("model response has no classification")
     if parsed["classification"] not in {"LLM-in-the-Loop", "traditional", "Not-Sure"}:
         raise ValueError(f"invalid classification: {parsed['classification']}")
     return parsed
@@ -106,6 +113,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0, help="Validate only the first N findings; 0 means all")
     parser.add_argument("--contains", help="Only findings whose message contains this text")
     parser.add_argument("--workers", type=int, default=4, help="Concurrent model validations")
+    parser.add_argument("--language", default="typescript", choices=("typescript", "javascript", "python"))
     args = parser.parse_args()
 
     sarif = json.loads(Path(args.sarif).read_text(encoding="utf-8"))
@@ -116,19 +124,30 @@ def main() -> None:
         findings = findings[: args.limit]
 
     root = Path(args.source_root)
-    client = LLMClient()
+    source_determiner = SourceDeterminer(str(root), str(Path(args.output).parent), language=args.language)
+    fully_determiner = FullyDeterminer(str(root), str(Path(args.output).parent), language=args.language)
     def validate_one(pair):
         index, finding = pair
         locations = locations_for_result(finding)
         context_parts = []
         for item in locations:
             context_parts.append(f"{item['uri']}:{item['line']} ({item['message']})\n{line_context(root / item['uri'], item['line'])}")
-        prompt = PROMPT.format(
-            finding=json.dumps({"ruleId": finding.get("ruleId"), "message": finding.get("message", {}).get("text", "")}, ensure_ascii=False),
-            context="\n\n".join(context_parts),
+        context = "\n\n".join(context_parts)
+        source_decision = source_determiner.confirm_codeql_finding(
+            {"ruleId": finding.get("ruleId"), "message": finding.get("message", {}).get("text", "")},
+            context,
+            index,
         )
-        decision = parse_response(client.complete(prompt))
-        return {"index": index, "finding": finding, "locations": locations, "decision": decision}
+        decision = fully_determiner.classify_codeql_finding(
+            {"ruleId": finding.get("ruleId"), "message": finding.get("message", {}).get("text", "")},
+            context,
+            source_decision,
+            index,
+        )
+        if decision is None:
+            raise ValueError("final validation returned no readable JSON")
+        return {"index": index, "finding": finding, "locations": locations,
+                "source_decision": source_decision, "decision": parse_response({"choices": [{"message": {"content": json.dumps(decision)}}]})}
 
     validated = []
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:

@@ -3,14 +3,18 @@ import json
 import subprocess
 import os
 from openai import OpenAI
-from ..Source_Identification.llm_client import LLMClient
+try:
+    from ..Source_Identification.llm_client import LLMClient
+except ImportError:
+    from Source_Identification.llm_client import LLMClient
 
 
 class SourceDeterminer:
-    def __init__(self, project_base_path, log_dir):
+    def __init__(self, project_base_path, log_dir, language="python"):
         self.project_base_path = project_base_path
         self.log_dir = log_dir
-        self.llm_client = LLMClient(api_key="sk-123") # Replace with your actual API key
+        self.language = language
+        self.llm_client = LLMClient()
         self.system_prompt = """
 您是一位专门识别代码中污点源函数的软件安全专家。为了进行精确分析，您需要具备扎实的Python编程能力和污点流分析技能。
 现在，您的任务是检查一个开源项目（使用Python编写）中的函数是否是请求大模型对话API的函数。判断标准如下：
@@ -46,6 +50,33 @@ class SourceDeterminer:
 返回的"reason"和"triggering_conditions"内容需要使用中文。
 以下是您需要分析的可疑代码片段和调用链：
 """
+        if language.lower() in {"typescript", "javascript", "ts", "js"}:
+            self.system_prompt = """
+You are the source-identification stage of a static taint-analysis review.
+Do not execute code. Determine whether the reported CodeQL source is plausibly
+attacker-controlled and identify the entry point from the available evidence.
+Return JSON only: {\"is_attacker_controlled\": true or false,
+\"attacker_entry_point\": \"...\", \"reason\": \"...\"}.
+If the evidence is insufficient, use false and explain why.
+"""
+
+    def confirm_codeql_finding(self, finding, context, issue_number):
+        """Run the original SourceDeterminer stage on one CodeQL finding."""
+        prompt = (
+            f"{self.system_prompt}\nIssue {issue_number}\n"
+            f"CodeQL finding:\n{json.dumps(finding, ensure_ascii=False)}\n"
+            f"Source context:\n{context}"
+        )
+        response = self.llm_client.complete(prompt)
+        content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
+        try:
+            return json.loads(content)
+        except (TypeError, json.JSONDecodeError):
+            return {
+                "is_attacker_controlled": False,
+                "attacker_entry_point": "Not-Sure",
+                "reason": "Source confirmation returned no readable JSON.",
+            }
 
     def process_project(self, project_name, taint_output_file):
         """
@@ -554,7 +585,7 @@ class SourceDeterminer:
                 if "json.decoder.JSONDecodeError" in error_message:
                     with open(response_file.replace(".json", "_raw.txt"), "w") as f_raw:
                         f_raw.write(str(response_data))
-                    print(f"原始响应已保存到 {response_file.replace(".json", "_raw.txt")}")
+                    print(f"原始响应已保存到 {response_file.replace('.json', '_raw.txt')}")
                 sys.exit(1)
         except Exception as e:
                 print(f"处理 issue {issue_number} 时发生未知错误：{str(e)}")
@@ -597,7 +628,5 @@ class SourceDeterminer:
 
 #     # 检查并合并重复的 issues
 #     check_and_merge_duplicate_issues(project_name)
-
-
 
 

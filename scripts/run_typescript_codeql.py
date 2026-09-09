@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from run_download_and_check import run_pysa_check
+from run_download_and_check import run_project_pipeline
 
 
 def main():
@@ -25,7 +25,7 @@ def main():
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config["project_root"] = str(root)
     source = root / config["source_dir"]
-    has_issue = run_pysa_check(str(source), backend="codeql", config=config)
+    has_issue = run_project_pipeline(str(source), language="typescript", backend="codeql", config=config)
     print(f"CodeQL findings: {has_issue}")
 
 
