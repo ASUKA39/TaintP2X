@@ -1,0 +1,4 @@
+name: taintp2x-typescript
+version: 0.1.0
+dependencies:
+  codeql/javascript-all: 2.6.12

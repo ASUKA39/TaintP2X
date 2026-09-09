@@ -1,0 +1,14 @@
+{
+  "target_name": "FlowiseAI__Flowise_CVE-2025-55346_2.2.6",
+  "repo_url": "https://github.com/FlowiseAI/Flowise",
+  "ref": "2.2.6",
+  "expected_commit": "da04289ecf1c25dc4894737e9d00eac9f6d9ec7d",
+  "source_dir": ".workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6",
+  "codeql_database": ".workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2025-55346_2.2.6",
+  "codeql_query": "CodeQL_Queries/FlowiseCWE94.ql",
+  "codeql_cli": ".workspace/codeql-cli-2.23.2/codeql/codeql",
+  "codeql_repo": ".workspace/codeql-repo",
+  "install_command": "corepack enable && corepack prepare pnpm@9.15.5 --activate && pnpm install --frozen-lockfile",
+  "build_command": "",
+  "image": "taintp2x:typescript"
+}

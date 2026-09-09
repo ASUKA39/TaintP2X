@@ -54,6 +54,187 @@ docker run --rm --platform linux/amd64 taintp2x:baseline bash -lc '
 
 本次复现已验证输出包含 `Python 3.10.12`、`Client version: 0.9.23`、`sapp-cli-ok` 和 `imports-ok`。该步骤只建立并验证工具镜像，不 clone 或安装测试目标仓库，也不运行 TaintP2X 分析。
 
+## TypeScript 迁移复现
+
+本节记录 `typescript-port` 分支已经实际跑通的 TypeScript 检测链。TypeScript 和 JavaScript 使用 CodeQL 的统一 `javascript` extractor；CodeQL CLI 及官方 JavaScript QL pack 沿用 IRIS 的 `.workspace` checkout，通过只读挂载提供给 TaintP2X 容器。修复生成和运行时 exploit 均不执行，结果是静态 CodeQL SARIF。
+
+### TypeScript 输入和 artifact 布局
+
+通用配置文件是 `TYPESCRIPT_REPRODUCTION_CONFIG.json`，至少提供目标仓库 URL、固定 ref/commit、源码目录、CodeQL 数据库目录、查询路径、CodeQL CLI/QL pack 路径和目标依赖安装命令。所有源码、数据库、Source Identification 输出和 SARIF 均放在 `.workspace/`；镜像构建上下文不会复制 `.workspace`。
+
+本次示例的目标是 `FlowiseAI/Flowise` 的 `2.2.6`（commit `da04289ecf1c25dc4894737e9d00eac9f6d9ec7d`），配置文件为 `TYPESCRIPT_REPRODUCTION_CONFIG.json`，源码目录为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6`，CWE-94 查询为 `CodeQL_Queries/FlowiseCWE94.ql`。
+
+### TypeScript Step 1：构建独立迁移镜像
+
+通用命令：
+
+```bash
+docker build --platform linux/amd64 -f Dockerfile.typescript -t taintp2x:typescript .
+docker run --rm --platform linux/amd64 taintp2x:typescript bash -lc '
+  node --version
+  tsc --version
+  python --version
+  python -c "import requests; print(\"python-runtime-ok\")"
+'
+```
+
+`Dockerfile.typescript` 使用 Node 22、官方 TypeScript Compiler API 5.4.5 和隔离 Python 环境；它不包含目标仓库依赖，也不把 CodeQL CLI 固定复制进镜像。目标依赖按配置在目标准备阶段安装，CodeQL CLI/QL pack 按 IRIS 方式从宿主机 `.workspace` 只读挂载。
+
+本次镜像构建成功，验证输出为 Node `v22.23.2`、TypeScript `5.4.5`、Python `3.11.2` 和 `python-runtime-ok`。
+
+### TypeScript Step 2：准备 CodeQL CLI 和官方 QL pack
+
+通用准备方式与 IRIS 相同：CodeQL CLI 使用 `2.23.2`，官方 CodeQL 源码 checkout 使用 `codeql-cli/v2.23.2`，二者分别放在 `.workspace/codeql-cli-2.23.2` 和 `.workspace/codeql-repo`。如果这两个目录已经由 IRIS 准备好，不需要重复下载。
+
+```bash
+mkdir -p .workspace/codeql-cli-2.23.2 .workspace/codeql-repo
+curl -L -o .workspace/codeql-cli-2.23.2/codeql.zip \
+  https://github.com/github/codeql-cli-binaries/releases/download/v2.23.2/codeql.zip
+unzip -qo .workspace/codeql-cli-2.23.2/codeql.zip -d .workspace/codeql-cli-2.23.2
+rm -f .workspace/codeql-cli-2.23.2/codeql.zip
+git clone --depth 1 --branch codeql-cli/v2.23.2 \
+  https://github.com/github/codeql.git .workspace/codeql-repo
+.workspace/codeql-cli-2.23.2/codeql/codeql version
+git -C .workspace/codeql-repo describe --tags --exact-match
+```
+
+本次测试直接复用了 `/data/AgentSecStudy/tools/iris/.workspace/codeql-cli-2.23.2` 和 `/data/AgentSecStudy/tools/iris/.workspace/codeql-repo`，在容器中分别挂载为 `/taintp2x/.workspace/codeql-cli-2.23.2` 和 `/taintp2x/.workspace/codeql-repo`；CLI 版本校验为 `2.23.2`。
+
+### TypeScript Step 3：获取并固定目标源码
+
+通用命令：
+
+```bash
+PROJECT_DIR=".workspace/project-sources/<TARGET_NAME>"
+mkdir -p .workspace/project-sources
+git clone --branch <REF> --depth 1 <REPO_URL> "$PROJECT_DIR"
+test "$(git -C "$PROJECT_DIR" rev-parse HEAD)" = "<EXPECTED_COMMIT>"
+```
+
+本次目标已经获取并固定：
+
+```bash
+TARGET_DIR=".workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6"
+test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = \
+  "da04289ecf1c25dc4894737e9d00eac9f6d9ec7d"
+```
+
+### TypeScript Step 4：准备目标依赖
+
+目标仓库若需要依赖或构建，使用 `TYPESCRIPT_REPRODUCTION_CONFIG.json` 中的 `install_command` 和 `build_command`，在目标源码根目录执行；CodeQL JavaScript/TypeScript extractor 对本次 Flowise 数据库不要求先完成项目构建，因此建库测试不依赖 `pnpm install`。后续要分析依赖解析或生成构建产物时，再执行配置中的 `pnpm install --frozen-lockfile`。
+
+本次示例配置的依赖命令为：
+
+```bash
+cd .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6
+corepack enable
+corepack prepare pnpm@9.15.5 --activate
+pnpm install --frozen-lockfile
+```
+
+### TypeScript Step 5：用官方 TypeScript Compiler API 识别 Source 候选
+
+通用命令：
+
+```bash
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/taintp2x \
+  --workdir /taintp2x taintp2x:typescript bash -lc \
+  'node Source_Identification/analyze_typescript_sources.js \
+    <SOURCE_DIR> <SOURCE_DIR>/source/analysis_source_typescript.json'
+```
+
+`Source_Identification/analyze_typescript_sources.js` 使用官方 Compiler API 遍历 `.ts`、`.tsx`、`.js` 和 `.jsx` AST，输出与 Python 管线兼容的 `assignments`、`attribute_uses`，同时保留模块、函数源码和行号。候选识别只负责定位可能的模型 SDK 调用，不把候选直接当成最终 Source。
+
+本次示例命令：
+
+```bash
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/taintp2x \
+  --workdir /taintp2x taintp2x:typescript bash -lc \
+  'node Source_Identification/analyze_typescript_sources.js \
+    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6 \
+    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/analysis_source_typescript.json'
+```
+
+本次扫描输出 81 个 TypeScript Source 候选，结果文件为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/analysis_source_typescript.json`。
+
+### TypeScript Step 6：模型确认并生成 CodeQL Source 清单
+
+通用确认命令：
+
+```bash
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/taintp2x \
+  --workdir /taintp2x \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  -e OPENAI_BASE_URL="https://api.deepseek.com" \
+  -e OPENAI_MODEL="deepseek-v4-flash" \
+  -e OPENAI_EXTRA_BODY='{"thinking":{"type":"disabled"}}' \
+  taintp2x:typescript bash -lc \
+  'python -m Source_Identification.confirm_typescript_source \
+    <ANALYSIS_JSON> <LLM_ANALYSIS_JSON>'
+```
+
+确认阶段沿用 `Source_Identification/llm_client.py` 的 OpenAI-compatible 适配；适配代码仍在该文件，替换其他远程模型时只需调整环境变量或该通用请求适配。确认完成后，`make_codeql_sources.py` 将 `is_llm_call=true` 的记录输出成可审计 Source 清单。
+
+本次测试使用 DeepSeek 官方 API（`https://api.deepseek.com`、模型 `deepseek-v4-flash`、thinking disabled），对 3 个候选进行了实际确认，生成：
+
+```text
+.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/llm_analysis_typescript.json
+.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json
+```
+
+### TypeScript Step 7：创建数据库并运行 CodeQL 检测
+
+CodeQL 数据库使用 `--language javascript`，因为 CodeQL 对 JavaScript 和 TypeScript 共用 extractor。通用命令如下，CLI 和 QL pack 通过只读挂载提供：
+
+```bash
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/taintp2x \
+  --mount type=bind,src="<CODEQL_CLI_CHECKOUT>",dst=/taintp2x/.workspace/codeql-cli-2.23.2,readonly \
+  --mount type=bind,src="<CODEQL_REPO_CHECKOUT>",dst=/taintp2x/.workspace/codeql-repo,readonly \
+  --workdir /taintp2x taintp2x:typescript bash -lc \
+  'python scripts/run_typescript_codeql.py --config TYPESCRIPT_REPRODUCTION_CONFIG.json'
+```
+
+`scripts/run_typescript_codeql.py` 会按配置创建数据库（已存在时可传 `--skip-create`），然后执行 `CodeQL_Queries/FlowiseCWE94.ql` 并写出 SARIF。该查询使用官方 JavaScript CodeQL 数据流 API，定义可扩展的 `LLMControlledSource` 和 `DynamicFunctionSink`；首版将 `customToolSchema` 等外部模型控制输入纳入 Source，将全局 `Function` 构造器参数纳入 CWE-94 Sink。
+
+本次实际运行使用：
+
+```bash
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/taintp2x \
+  --mount type=bind,src="/data/AgentSecStudy/tools/iris/.workspace/codeql-cli-2.23.2",dst=/taintp2x/.workspace/codeql-cli-2.23.2,readonly \
+  --mount type=bind,src="/data/AgentSecStudy/tools/iris/.workspace/codeql-repo",dst=/taintp2x/.workspace/codeql-repo,readonly \
+  --workdir /taintp2x taintp2x:typescript bash -lc \
+  'python scripts/run_typescript_codeql.py \
+    --config TYPESCRIPT_REPRODUCTION_CONFIG.json --skip-create'
+```
+
+本次测试沿用已创建的 `.workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2025-55346_2.2.6` 数据库，输出 `.workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif`。
+
+### TypeScript 结果格式和校验
+
+SARIF 是标准 JSON；`runs[0].results` 是告警列表，`codeFlows` 是可选的污点路径。校验命令：
+
+```bash
+jq '{count:(.runs[0].results|length), results:[.runs[0].results[]|{ruleId,message:.message.text,file:.locations[0].physicalLocation.artifactLocation.uri,line:.locations[0].physicalLocation.region.startLine}]}' \
+  .workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif
+```
+
+本次输出为 1 条 `taintp2x/typescript-cwe-094` 告警，位置为 `packages/components/nodes/tools/CustomTool/CustomTool.ts:121`，即 `new Function('z', \`return ${customToolSchema}\`)`；该告警包含 1 条 CodeQL path flow，共 4 个路径位置。官方标准 CWE-94 查询在本数据库上没有命中，专用查询通过明确的 `customToolSchema` Source 模型补足了该项目的输入语义。
+
+### TypeScript 清理
+
+回收本次容器使用 `docker run --rm` 自动完成；宿主机 `.workspace` 中的源码、数据库和 SARIF 是需要保留的实验 artifact。确认不再需要时，只删除当前目标的精确目录，不删除共享的 CodeQL CLI/QL pack checkout：
+
+```bash
+rm -rf .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6 \
+       .workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2025-55346_2.2.6 \
+       .workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif
+```
+
 ## Step 2：创建实验容器并获取目标源码
 
 ### 通用步骤
