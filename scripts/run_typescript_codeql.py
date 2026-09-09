@@ -24,6 +24,16 @@ def main():
     database = root / config["codeql_database"]
     output = root / ".workspace" / "codeql-results" / f"{config['target_name']}.sarif"
     query = root / config["codeql_query"]
+    manifest = root / config["models_manifest"]
+    generated_models = root / config["generated_models"]
+    source_records = root / config["source_records"]
+    model_command = [
+        "python", str(root / "scripts" / "generate_codeql_models.py"),
+        str(manifest), str(generated_models),
+    ]
+    if source_records.exists():
+        model_command.extend(["--source-records", str(source_records)])
+    run(model_command)
     if not args.skip_create:
         database.parent.mkdir(parents=True, exist_ok=True)
         run([str(cli), "database", "create", str(database), "--language", "javascript", "--source-root", str(source), "--overwrite"])

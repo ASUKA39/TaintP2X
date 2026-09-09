@@ -62,7 +62,7 @@ docker run --rm --platform linux/amd64 taintp2x:baseline bash -lc '
 
 通用配置文件是 `TYPESCRIPT_REPRODUCTION_CONFIG.json`，至少提供目标仓库 URL、固定 ref/commit、源码目录、CodeQL 数据库目录、查询路径、CodeQL CLI/QL pack 路径和目标依赖安装命令。所有源码、数据库、Source Identification 输出和 SARIF 均放在 `.workspace/`；镜像构建上下文不会复制 `.workspace`。
 
-本次示例的目标是 `FlowiseAI/Flowise` 的 `2.2.6`（commit `da04289ecf1c25dc4894737e9d00eac9f6d9ec7d`），配置文件为 `TYPESCRIPT_REPRODUCTION_CONFIG.json`，源码目录为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6`，CWE-94 查询为 `CodeQL_Queries/FlowiseCWE94.ql`。
+本次示例的目标是 `FlowiseAI/Flowise` 的 `2.2.6`（commit `da04289ecf1c25dc4894737e9d00eac9f6d9ec7d`），配置文件为 `TYPESCRIPT_REPRODUCTION_CONFIG.json`，源码目录为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6`，通用查询为 `CodeQL_Queries/TaintP2X.ql`。
 
 ### TypeScript Step 1：构建独立迁移镜像
 
@@ -198,7 +198,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   'python scripts/run_typescript_codeql.py --config TYPESCRIPT_REPRODUCTION_CONFIG.json'
 ```
 
-`scripts/run_typescript_codeql.py` 会按配置创建数据库（已存在时可传 `--skip-create`），然后执行 `CodeQL_Queries/FlowiseCWE94.ql` 并写出 SARIF。该查询使用官方 JavaScript CodeQL 数据流 API，定义可扩展的 `LLMControlledSource` 和 `DynamicFunctionSink`；首版将 `customToolSchema` 等外部模型控制输入纳入 Source，将全局 `Function` 构造器参数纳入 CWE-94 Sink。
+`scripts/run_typescript_codeql.py` 会先从 `CodeQL_Models/taintp2x_models.json` 生成 `CodeQL_Queries/TaintP2XModels.qll`，再按配置创建数据库（已存在时可传 `--skip-create`），最后执行固定的 `CodeQL_Queries/TaintP2X.ql` 并写出 SARIF。查询只实现一次通用 Source → Sink 连通性求解；API、Source、Sink、Sanitizer 和传播规则均来自模型清单，不依赖仓库名或具体 CVE。
 
 本次实际运行使用：
 
@@ -223,7 +223,7 @@ jq '{count:(.runs[0].results|length), results:[.runs[0].results[]|{ruleId,messag
   .workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif
 ```
 
-本次输出为 1 条 `taintp2x/typescript-cwe-094` 告警，位置为 `packages/components/nodes/tools/CustomTool/CustomTool.ts:121`，即 `new Function('z', \`return ${customToolSchema}\`)`；该告警包含 1 条 CodeQL path flow，共 4 个路径位置。官方标准 CWE-94 查询在本数据库上没有命中，专用查询通过明确的 `customToolSchema` Source 模型补足了该项目的输入语义。
+本次通用查询输出 72 条跨类别告警，其中包含 `LLMControlled → RemoteCodeExecution` 到 `packages/components/nodes/tools/CustomTool/CustomTool.ts:121` 的路径，即 `new Function('z', \`return ${customToolSchema}\`)`。查询本身不包含该仓库或该漏洞的专用逻辑；若需要新增 SDK 或 Sink，只修改模型清单并重新生成模型模块。
 
 ### TypeScript 清理
 
