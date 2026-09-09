@@ -1,4 +1,4 @@
-FROM node:22-bookworm
+FROM node:20-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -10,9 +10,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
+    cmake \
     curl \
     git \
     jq \
+    libopenblas-dev \
     python3 \
     python3-pip \
     python3-venv \
@@ -25,7 +27,7 @@ RUN python3 -m venv "$VIRTUAL_ENV" \
     && printf '%s\n' 'export PATH="/opt/venv/bin:$PATH"' > /etc/profile.d/taintp2x.sh
 
 # The official TypeScript Compiler API is the source-identification frontend.
-RUN npm install --global typescript@5.4.5
+RUN npm install --global typescript@5.4.5 pnpm@9.15.5
 
 WORKDIR /taintp2x
 COPY . /taintp2x/

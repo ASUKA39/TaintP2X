@@ -78,9 +78,9 @@ docker run --rm --platform linux/amd64 taintp2x:typescript bash -lc '
 '
 ```
 
-`Dockerfile.typescript` 使用 Node 22、官方 TypeScript Compiler API 5.4.5 和隔离 Python 环境；它不包含目标仓库依赖，也不把 CodeQL CLI 固定复制进镜像。目标依赖按配置在目标准备阶段安装，CodeQL CLI/QL pack 按 IRIS 方式从宿主机 `.workspace` 只读挂载。
+`Dockerfile.typescript` 使用 Node 20、官方 TypeScript Compiler API 5.4.5 和隔离 Python 环境；Node 20 符合 Flowise 2.2.6 的引擎约束。镜像不包含目标仓库依赖，也不把 CodeQL CLI 固定复制进镜像。目标依赖按配置在目标准备阶段安装，CodeQL CLI/QL pack 按 IRIS 方式从宿主机 `.workspace` 只读挂载。
 
-本次镜像构建成功，验证输出为 Node `v22.23.2`、TypeScript `5.4.5`、Python `3.11.2` 和 `python-runtime-ok`。
+本次镜像构建成功，验证输出为 Node `v20.20.2`、TypeScript `5.4.5`、Python `3.11.2` 和 `python-runtime-ok`。
 
 ### TypeScript Step 2：准备 CodeQL CLI 和官方 QL pack
 
@@ -115,22 +115,26 @@ test "$(git -C "$PROJECT_DIR" rev-parse HEAD)" = "<EXPECTED_COMMIT>"
 
 ```bash
 TARGET_DIR=".workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6"
+git clone --branch flowise@2.2.6 --depth 1 \
+  https://github.com/FlowiseAI/Flowise "$TARGET_DIR"
 test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = \
   "da04289ecf1c25dc4894737e9d00eac9f6d9ec7d"
 ```
 
 ### TypeScript Step 4：准备目标依赖
 
-目标仓库若需要依赖或构建，使用 `TYPESCRIPT_REPRODUCTION_CONFIG.json` 中的 `install_command` 和 `build_command`，在目标源码根目录执行；CodeQL JavaScript/TypeScript extractor 对本次 Flowise 数据库不要求先完成项目构建，因此建库测试不依赖 `pnpm install`。后续要分析依赖解析或生成构建产物时，再执行配置中的 `pnpm install --frozen-lockfile`。
+目标仓库若需要依赖或构建，使用 `TYPESCRIPT_REPRODUCTION_CONFIG.json` 中的 `install_command` 和 `build_command`，在迁移镜像内的目标源码根目录执行。CodeQL JavaScript/TypeScript extractor 对本次 Flowise 数据库不要求先完成项目构建，但本次复现仍先完成依赖安装，以验证配置中的准备步骤可用。
 
 本次示例配置的依赖命令为：
 
 ```bash
-cd .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6
-corepack enable
-corepack prepare pnpm@9.15.5 --activate
-pnpm install --frozen-lockfile
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/taintp2x \
+  --workdir /taintp2x/.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6 \
+  taintp2x:typescript bash -lc 'pnpm install --frozen-lockfile'
 ```
+
+本次安装通过锁文件校验，完成 3608 个包的安装；`sqlite3` 和 `faiss-node` 的安装脚本成功完成。pnpm 对部分可选原生包提示其构建脚本默认被忽略，但不影响本次 CodeQL 静态分析。
 
 ### TypeScript Step 5：用官方 TypeScript Compiler API 识别 Source 候选
 
@@ -182,8 +186,20 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
 
 ```text
 .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/llm_analysis_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json
-.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json
 ```
+
+随后在同一个容器中生成 CodeQL Source 清单：
+
+```bash
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/taintp2x \
+  --workdir /taintp2x taintp2x:typescript bash -lc \
+  'python Source_Identification/make_codeql_sources.py \
+    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/llm_analysis_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json \
+    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json'
+```
+
+本次确认实际处理 3 个候选，生成了上述分析文件和 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json`。
 
 ### TypeScript Step 7：创建数据库并运行 CodeQL 检测
 
@@ -232,14 +248,22 @@ CodeQL 只负责计算通用污点路径；后验证由 `scripts/validate_codeql
 通用命令：
 
 ```bash
-python scripts/validate_codeql_results.py \
-  --sarif .workspace/codeql-results/<TARGET>.sarif \
-  --source-root .workspace/project-sources/<TARGET> \
-  --output .workspace/codeql-validation/<TARGET>.md \
-  --workers 4
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/taintp2x \
+  --workdir /taintp2x \
+  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+  -e OPENAI_BASE_URL="https://api.deepseek.com" \
+  -e OPENAI_MODEL="deepseek-v4-flash" \
+  -e OPENAI_EXTRA_BODY='{"thinking":{"type":"disabled"}}' \
+  taintp2x:typescript bash -lc \
+  'python scripts/validate_codeql_results.py \
+    --sarif .workspace/codeql-results/<TARGET>.sarif \
+    --source-root .workspace/project-sources/<TARGET> \
+    --output .workspace/codeql-validation/<TARGET>.md \
+    --workers 4'
 ```
 
-本次 Flowise 测试对包含 `RemoteCodeExecution` 的告警实际执行后验证，单条报告保存在 `.workspace/codeql-validation/flowise-retest.md`。随后去掉 `--contains` 对全部 72 条告警完成后验证，报告为 `.workspace/codeql-validation/flowise-retest-all.md`，成功后验证 72/72，其中 `LLM-in-the-Loop` 20 条、`traditional` 33 条、`Not-Sure` 19 条。
+本次 Flowise 测试对包含 `RemoteCodeExecution` 的告警实际执行后验证，单条报告保存在 `.workspace/codeql-validation/flowise-retest.md`。随后去掉 `--contains` 对全部 72 条告警完成后验证，报告为 `.workspace/codeql-validation/flowise-retest-all.md`，成功后验证 72/72，其中 `LLM-in-the-Loop` 22 条、`traditional` 33 条、`Not-Sure` 17 条。
 
 ### TypeScript 清理
 
