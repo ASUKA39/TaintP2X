@@ -225,6 +225,22 @@ jq '{count:(.runs[0].results|length), results:[.runs[0].results[]|{ruleId,messag
 
 本次通用查询输出 72 条跨类别告警，其中包含 `LLMControlled → RemoteCodeExecution` 到 `packages/components/nodes/tools/CustomTool/CustomTool.ts:121` 的路径，即 `new Function('z', \`return ${customToolSchema}\`)`。查询本身不包含该仓库或该漏洞的专用逻辑；若需要新增 SDK 或 Sink，只修改模型清单并重新生成模型模块。
 
+### TypeScript Step 8：LLM 后验证
+
+CodeQL 只负责计算通用污点路径；后验证由 `scripts/validate_codeql_results.py` 完成。它读取 SARIF 的每条告警及全部 `codeFlows`，从目标源码提取路径位置上下文，使用配置的 OpenAI-compatible 模型判断攻击者入口、利用链、Sanitizer 和 `LLM-in-the-Loop`/`traditional`/`Not-Sure` 分类。该阶段是静态审计，不运行目标代码；模型调用失败的条目直接跳过，不伪造分类。
+
+通用命令：
+
+```bash
+python scripts/validate_codeql_results.py \
+  --sarif .workspace/codeql-results/<TARGET>.sarif \
+  --source-root .workspace/project-sources/<TARGET> \
+  --output .workspace/codeql-validation/<TARGET>.md \
+  --workers 4
+```
+
+本次 Flowise 测试对包含 `RemoteCodeExecution` 的告警实际执行后验证：DeepSeek 返回 `LLM-in-the-Loop`，入口为 `nodeData.inputs.customToolSchema`，利用链到 `CustomTool.ts:121` 的 `new Function`，单条报告保存在 `.workspace/codeql-validation/flowise.md`。随后去掉 `--contains` 对全部 72 条告警完成后验证，报告为 `.workspace/codeql-validation/flowise-all.md`，其中 `LLM-in-the-Loop` 6 条、`traditional` 3 条、`Not-Sure` 63 条。
+
 ### TypeScript 清理
 
 回收本次容器使用 `docker run --rm` 自动完成；宿主机 `.workspace` 中的源码、数据库和 SARIF 是需要保留的实验 artifact。确认不再需要时，只删除当前目标的精确目录，不删除共享的 CodeQL CLI/QL pack checkout：

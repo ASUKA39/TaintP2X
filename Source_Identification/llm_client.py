@@ -60,11 +60,15 @@ class LLMClient:
             大模型返回的JSON响应
         """
         full_prompt = prompt.format(method_code=method_code)
+        return self.complete(full_prompt)
+
+    def complete(self, prompt: str) -> Dict:
+        """Send an arbitrary JSON-oriented prompt to the configured model."""
         
         try:
             payload = {
                 "model": self.model,
-                "messages": [{"role": "user", "content": full_prompt}],
+                "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0,
                 "max_tokens": 1024,
                 "response_format": {"type": "json_object"}
