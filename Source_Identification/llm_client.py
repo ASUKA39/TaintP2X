@@ -88,3 +88,19 @@ class LLMClient:
             return {"error": f"Request Error: {e}", "analysis": None}
         except Exception as e:
             return {"error": f"Unexpected error: {e}", "analysis": None}
+
+    def chat_completion(self, model=None, messages=None, **kwargs) -> Dict:
+        """Compatibility API for the original validation modules."""
+        if model:
+            original_model = self.model
+            self.model = model
+        try:
+            prompt = "\n\n".join(
+                message.get("content", "")
+                for message in (messages or [])
+                if message.get("content")
+            )
+            return self.complete(prompt)
+        finally:
+            if model:
+                self.model = original_model

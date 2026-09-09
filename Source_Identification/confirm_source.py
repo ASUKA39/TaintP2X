@@ -18,8 +18,8 @@ def analyze_model_calls(method_code: str, language: str = "python") -> Dict:
         prompt = """
         Determine whether the following TypeScript/JavaScript function calls an
         LLM or returns model output. Return only JSON with the fields
-        {\"method_name\": <string>, \"is_llm_call\": <boolean>,
-        \"reason\": <short explanation>}.
+        {{\"method_name\": <string>, \"is_llm_call\": <boolean>,
+        \"reason\": <short explanation>}}.
         Candidate SDKs include OpenAI, Anthropic, LangChain, Google, Ollama,
         Groq, Mistral, Cohere, Vercel AI, and other model clients.
 
