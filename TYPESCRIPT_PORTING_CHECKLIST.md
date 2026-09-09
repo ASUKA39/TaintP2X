@@ -9,3 +9,26 @@
 | `run_download_and_check.py::run_pysa_check` | 将 Pysa 配置生成、`pyre analyze` 执行、`taint-output.json` 检查和结果保存这一后端边界迁移为 CodeQL 分析执行、机器可读结果输出及结果检查。 | 保留该函数作为静态分析后端 Driver，保持调用时机、`has_issue` 返回值、超时、错误处理和结果目录逻辑不变；改为驱动 CodeQL database analyze/query，读取 SARIF/BQRS，并在此边界转换为后续 LLM 验证器使用的统一 issue/path 结构。目标依赖安装、必要构建和 CodeQL database 准备由环境准备阶段负责，该 Driver 只消费已准备好的源码和 CodeQL database。 |
 | `LLM-assisted_Validation/ds_llm_source_determine_mul.py` | 将 Pysa `taint-output.json` 的 issue/source trace 解析迁移到 CodeQL 结果适配接口；将 `.py`、`def`、缩进函数边界和 Python LLM API Prompt 迁移为 TypeScript 文件、函数/方法边界及 LLM API 语义。 | 保持统一 issue/path 输入、Source 判断、LLM 调用、日志目录和结果字段不变；使用官方 TypeScript Compiler API 提取函数、方法、箭头函数或模块级代码，并将 Python LLM API 判断 Prompt 改为 TypeScript/Node.js 语义。不直接解析 CodeQL 原始 SARIF/BQRS。 |
 | `LLM-assisted_Validation/ds_llm_fully_determine_mul.py` | 将 Pysa issue、callable 和 trace chain 的消费迁移到 CodeQL 路径结果；将 Python 函数查找、源码提取、Sink 示例及污点传播 Prompt 迁移为 TypeScript/Node.js 语义，保持逐路径 LLM 验证和综合判断接口。 | 保持逐函数分析、重复函数去重、sanitizer 补充、漏洞类型提示、整链综合判断及结果字段不变；读取统一的 CodeQL Source-to-Sink 路径结果，使用官方 TypeScript Compiler API 提取 `.ts`/`.tsx`/必要的 `.js` 函数或方法源码，并将 Python/原生 API 示例改为 TypeScript/Node.js 语义。 |
+
+## 测试目标
+
+| 项目 | 内容 |
+|---|---|
+| 仓库 | `FlowiseAI/Flowise` |
+| 链接 | <https://github.com/FlowiseAI/Flowise> |
+| 主要语言 | TypeScript |
+| 规模参考 | GitHub 仓库大小约 83 MB，约 55k stars |
+| 测试版本 | `flowise@2.2.6` |
+| 固定提交 | `da04289ecf1c25dc4894737e9d00eac9f6d9ec7d` |
+| 漏洞 | `CVE-2025-55346`，`CWE-94`，CVSS `9.8` |
+| 漏洞描述 | 用户可控输入流入不安全的动态 `Function` 构造器，导致网络攻击者执行任意 JavaScript 代码。 |
+| 选择理由 | 仓库规模适中，版本和提交可固定，漏洞是清晰的用户输入到动态代码执行 Sink 的 TypeScript 数据流，适合验证迁移后的 Source、Sink 和 CodeQL 路径分析。 |
+
+### 迁移测试模型
+
+| 配置项 | 内容 |
+|---|---|
+| 模型 | `deepseek-v4-flash` |
+| Base URL | `https://api.deepseek.com` |
+| Thinking | `{"thinking":{"type":"disabled"}}` |
+| API Key | `sk-281d0267e93b4955acf0847a0ebd73c0` |
