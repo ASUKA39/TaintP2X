@@ -1,0 +1,10 @@
+{
+  "container_name": "taintp2x-vanna-v0-3-4",
+  "target_name": "vanna-ai__vanna__v0.3.4",
+  "repo_url": "https://github.com/vanna-ai/vanna",
+  "ref": "v0.3.4",
+  "expected_commit": "570968d23d4f6c3060fa6977e76691128c27b064",
+  "source_dir": ".workspace/project-sources/vanna-ai__vanna__v0.3.4",
+  "target_import": "vanna",
+  "install_command": "python -m pip install -e ."
+}

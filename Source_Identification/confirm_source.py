@@ -3,10 +3,14 @@ import sys
 import os
 from typing import Dict, List, Optional
 import requests 
-from llm_client import LLMClient
+try:
+    from .llm_client import LLMClient
+except ImportError:  # Support running this file directly from its directory.
+    from llm_client import LLMClient
 
-# 在文件顶部初始化LLMClient
-llm_client = LLMClient(api_key="sk-123")
+# Provider, model, endpoint, and credentials are supplied through environment
+# variables; see REPRODUCTION_GUIDE.md for the runtime configuration.
+llm_client = LLMClient()
 
 # 修改analyze_model_calls函数
 def analyze_model_calls(method_code: str) -> Dict:

@@ -1,0 +1,5 @@
+.git
+.workspace
+__pycache__
+dataset
+*.pyc

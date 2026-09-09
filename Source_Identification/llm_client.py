@@ -1,11 +1,52 @@
-import requests
 import json
+import os
+from typing import Dict
+
+import requests
 
 class LLMClient:
-    def __init__(self, api_key: str, model: str = "Pro/deepseek-ai/DeepSeek-V3"):
-        self.api_key = api_key
-        self.model = model
-        self.url = "https://api.siliconflow.cn/v1/chat/completions"
+    """Small OpenAI-compatible client used by source confirmation.
+
+    The provider is selected at runtime so the source-identification logic does
+    not depend on a particular hosted model.  Credentials and endpoint details
+    intentionally stay outside the repository.
+    """
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+        extra_body: Dict | None = None,
+    ):
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY is required for LLM source confirmation")
+        self.model = model or os.environ.get("OPENAI_MODEL", "deepseek-v4-flash")
+        configured_base_url = base_url or os.environ.get(
+            "OPENAI_BASE_URL", "https://api.deepseek.com"
+        )
+        configured_base_url = configured_base_url.rstrip("/")
+        self.url = (
+            configured_base_url
+            if configured_base_url.endswith("/chat/completions")
+            else f"{configured_base_url}/chat/completions"
+        )
+
+        if extra_body is not None:
+            self.extra_body = extra_body
+        else:
+            raw_extra_body = os.environ.get("OPENAI_EXTRA_BODY", "")
+            if raw_extra_body:
+                try:
+                    parsed_extra_body = json.loads(raw_extra_body)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("OPENAI_EXTRA_BODY must contain valid JSON") from exc
+                if not isinstance(parsed_extra_body, dict):
+                    raise ValueError("OPENAI_EXTRA_BODY must contain a JSON object")
+                self.extra_body = parsed_extra_body
+            else:
+                self.extra_body = {}
     
     def analyze_code(self, prompt: str, method_code: str) -> Dict:
         """
@@ -28,13 +69,14 @@ class LLMClient:
                 "max_tokens": 1024,
                 "response_format": {"type": "json_object"}
             }
+            payload.update(self.extra_body)
 
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
 
-            response = requests.post(self.url, json=payload, headers=headers)
+            response = requests.post(self.url, json=payload, headers=headers, timeout=120)
             response.raise_for_status()
             return response.json()
             
