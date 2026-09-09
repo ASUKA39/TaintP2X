@@ -25,30 +25,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from Source_Identification.llm_client import LLMClient
 
 
-PROMPT = """你是软件安全专家，正在进行静态审计，不要运行代码，也不要假设运行时结果。
-请审查下面一条 CodeQL 污点路径，判断它是否构成可信的漏洞利用链。
+PROMPT = """You are a software security expert performing a static audit. Do not run code and do not assume runtime behavior.
+Review the following CodeQL taint path and determine whether it represents a credible exploit chain.
 
-传统漏洞的利用链通常是：攻击者可控输入 -> 中间逻辑 -> 安全敏感 Sink。
-LLM-in-the-Loop 漏洞要求 LLM 成为链条的一部分，包括：
-1. LLM 生成代码、表达式、SQL、命令或其他可执行/可解释载荷；
-2. LLM 决定工具、参数、路由或特权动作；
-3. 下游逻辑以安全敏感方式渲染、解析、分发或执行 LLM 输出。
-如果证据不足，保守地判定为 Not-Sure，不要臆测。
+In traditional vulnerability analysis, an exploit chain is attacker-controlled input -> intermediate logic -> security-sensitive sink.
+An LLM-in-the-Loop vulnerability requires the LLM to participate in that chain in at least one of these ways:
+1. The LLM generates code, expressions, SQL, commands, or another executable/interpretable payload.
+2. Exploitation depends on the LLM selecting tools, constructing arguments, routing execution, or triggering a privileged action.
+3. Downstream logic renders, parses, dispatches, or evaluates model output in a security-sensitive way.
+When evidence is insufficient, conservatively return Not-Sure and do not speculate.
 
-只返回一个 JSON 对象，字段必须是：
+Return exactly one JSON object with these fields:
 {{
-  "is_vulnerability": true 或 false,
-  "classification": "LLM-in-the-Loop"、"traditional" 或 "Not-Sure",
-  "attacker_entry_point": "攻击者入口点；证据不足写 Not-Sure",
-  "exploit_chain": "从入口点经过中间逻辑到 Sink 的链路",
-  "reason": "简短依据",
-  "sanitized": true 或 false
+  "is_vulnerability": true or false,
+  "classification": "LLM-in-the-Loop", "traditional", or "Not-Sure",
+  "attacker_entry_point": "attacker-controlled entry point; use Not-Sure when unsupported",
+  "exploit_chain": "chain from entry point through intermediate logic to the sink",
+  "reason": "brief evidence-based rationale",
+  "sanitized": true or false
 }}
 
-CodeQL 告警：
+CodeQL finding:
 {finding}
 
-污点路径源码上下文：
+Taint-path source context:
 {context}
 """
 

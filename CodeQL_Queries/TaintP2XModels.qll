@@ -12,7 +12,7 @@ module TaintP2XModels {
 
   class LLMControlledSource extends TaintP2XSource {
     LLMControlledSource() {
-      exists(DataFlow::CallNode call | (call.getCalleeName() in ["acomplete", "agenerate", "ainvoke", "call", "chat", "complete", "createChatCompletion", "generate", "generateContent", "invoke", "stream"] and this = call))
+      exists(DataFlow::CallNode call | (call.getCalleeName() in ["invoke", "ainvoke", "generate", "agenerate", "complete", "acomplete", "call", "chat", "stream", "generateContent", "createChatCompletion"] and this = call))
       or
       exists(DataFlow::PropRead read | (read.getPropertyName() in ["content", "text", "response", "output", "customToolSchema"] and this = read))
     }
@@ -40,40 +40,40 @@ module TaintP2XModels {
     override string getCategory() { result = "RemoteCodeExecution" }
   }
 
-  class ExecImportSinkSink extends TaintP2XSink {
-    ExecImportSinkSink() {
+  class ExecImportSink extends TaintP2XSink {
+    ExecImportSink() {
       exists(DataFlow::CallNode call | (call.getCalleeName() in ["require", "import", "dynamicImport"] and this = call.getAnArgument()))
     }
 
     override string getCategory() { result = "ExecImportSink" }
   }
 
-  class ExecDeserializationSinkSink extends TaintP2XSink {
-    ExecDeserializationSinkSink() {
+  class ExecDeserializationSink extends TaintP2XSink {
+    ExecDeserializationSink() {
       exists(DataFlow::CallNode call | (call.getCalleeName() in ["load", "unserialize", "deserialize", "parseYaml"] and this = call.getAnArgument()))
     }
 
     override string getCategory() { result = "ExecDeserializationSink" }
   }
 
-  class FileContentDeserializationSinkSink extends TaintP2XSink {
-    FileContentDeserializationSinkSink() {
+  class FileContentDeserializationSink extends TaintP2XSink {
+    FileContentDeserializationSink() {
       exists(DataFlow::CallNode call | (call.getCalleeName() in ["load", "unserialize", "deserialize", "parseYaml", "parse"] and this = call.getAnArgument()))
     }
 
     override string getCategory() { result = "FileContentDeserializationSink" }
   }
 
-  class ExecArgSinkSink extends TaintP2XSink {
-    ExecArgSinkSink() {
+  class ExecArgSink extends TaintP2XSink {
+    ExecArgSink() {
       exists(DataFlow::CallNode call | (call.getCalleeName() in ["exec", "execSync", "spawn", "spawnSync", "fork", "execa", "run"] and this = call.getAnArgument()))
     }
 
     override string getCategory() { result = "ExecArgSink" }
   }
 
-  class ExecEnvSinkSink extends TaintP2XSink {
-    ExecEnvSinkSink() {
+  class ExecEnvSink extends TaintP2XSink {
+    ExecEnvSink() {
       exists(DataFlow::PropRead read | (read.getPropertyName() in ["env", "envs"] and this = read))
     }
 
@@ -160,8 +160,8 @@ module TaintP2XModels {
     override string getCategory() { result = "Logging" }
   }
 
-  class SSRFSinkSink extends TaintP2XSink {
-    SSRFSinkSink() {
+  class SSRFSink extends TaintP2XSink {
+    SSRFSink() {
       exists(DataFlow::CallNode call | (call.getCalleeName() in ["fetch", "request", "get", "post", "put", "delete", "head", "axios"] and this = call.getAnArgument()))
     }
 

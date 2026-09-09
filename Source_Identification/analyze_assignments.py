@@ -1,6 +1,7 @@
 import ast
 import os
 import json
+import subprocess
 
 class AssignmentAnalyzer(ast.NodeVisitor):
     def __init__(self):
@@ -349,9 +350,25 @@ def analyze_project(project_path):
 
     return phase2_analyzer.results, phase2_analyzer.attribute_uses
 
-def run_analysis(project_root):
+def analyze_typescript_project(project_root):
+    """Run the TypeScript compiler-API frontend with the same JSON contract."""
+    script = os.path.join(os.path.dirname(__file__), "analyze_typescript_sources.js")
+    output_filename = os.path.join(
+        project_root, "source", f"analysis_source_{os.path.basename(project_root)}.json"
+    )
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+    subprocess.run(["node", script, project_root, output_filename], check=True)
+    with open(output_filename, "r", encoding="utf-8") as source_file:
+        output_data = json.load(source_file)
+    return output_data.get("assignments", []), output_data.get("attribute_uses", [])
+
+
+def run_analysis(project_root, language="python"):
     print(f"Analyzing project at: {project_root}")
-    found_assignments, found_uses = analyze_project(project_root)
+    if language.lower() in {"typescript", "javascript", "ts", "js"}:
+        found_assignments, found_uses = analyze_typescript_project(project_root)
+    else:
+        found_assignments, found_uses = analyze_project(project_root)
 
     output_data = {
         "assignments": found_assignments,
@@ -402,4 +419,4 @@ if __name__ == "__main__":
     # 示例用法，可以根据需要修改
     project_name = 'docetl'
     project_root = f'/llm_web_serve/servers/{project_name}'
-    run_analysis(project_root, project_type)
+    run_analysis(project_root, "python")

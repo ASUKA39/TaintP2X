@@ -19,7 +19,61 @@ def is_valid_git_repo(path):
     except:
         return False
 
-def run_pysa_check(folder):
+def run_codeql_check(folder, config):
+    """Run the CodeQL backend using the same check-stage contract as Pysa."""
+    root = os.path.abspath(config.get("project_root", "."))
+    cli = os.path.join(root, config["codeql_cli"])
+    database = os.path.join(root, config["codeql_database"])
+    output = os.path.join(root, config.get(
+        "codeql_output",
+        ".workspace/codeql-results/" + os.path.basename(database) + ".sarif",
+    ))
+    query = os.path.join(root, config["codeql_query"])
+    codeql_repo = os.path.join(root, config["codeql_repo"])
+    manifest = os.path.join(root, config["models_manifest"])
+    generated_models = os.path.join(root, config["generated_models"])
+    source_records = config.get("source_records")
+    if source_records:
+        source_records = os.path.join(root, source_records)
+
+    os.makedirs(os.path.dirname(generated_models), exist_ok=True)
+    model_command = [
+        "python", os.path.join(root, "scripts", "generate_codeql_models.py"),
+        manifest, generated_models,
+    ]
+    if source_records and os.path.exists(source_records):
+        model_command.extend(["--source-records", source_records])
+    subprocess.run(model_command, check=True)
+
+    database_parent = os.path.dirname(database)
+    os.makedirs(database_parent, exist_ok=True)
+    subprocess.run([
+        cli, "database", "create", database,
+        "--language", config.get("codeql_language", "javascript"),
+        "--source-root", folder, "--overwrite",
+    ], check=True, timeout=config.get("codeql_create_timeout", 1200))
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    subprocess.run([
+        cli, "database", "analyze", database, query,
+        "--search-path", codeql_repo,
+        "--format", "sarif-latest", "--output", output,
+        "--threads", str(config.get("codeql_threads", 0)), "--rerun",
+    ], check=True, timeout=config.get("codeql_analyze_timeout", 1200))
+    try:
+        with open(output, "r", encoding="utf-8") as result_file:
+            sarif = json.load(result_file)
+        return bool(sarif.get("runs", [{}])[0].get("results", []))
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
+def run_pysa_check(folder, backend="pysa", config=None):
+    """Run the selected taint backend while preserving the original entry point."""
+    if backend.lower() == "codeql":
+        if config is None:
+            raise ValueError("CodeQL backend requires a configuration")
+        return run_codeql_check(folder, config)
+
     """对指定文件夹运行 pysa 检查"""
     config = {
         "site_package_search_strategy": "pep561",
@@ -74,7 +128,7 @@ def backup_checked_repos(checked_repos_file):
         backup_file = os.path.join(backup_dir, f"checked_repos_{timestamp}.json")
         shutil.copy2(checked_repos_file, backup_file)
 
-def process_github_repo(repo, download_dir, max_retries=3):
+def process_github_repo(repo, download_dir, max_retries=3, language="python", backend="pysa", config=None):
     """下载并检查GitHub仓库"""
     start_time = time.time()  # 记录开始时间
     timeout = 1200  # 20分钟超时(1200秒)
@@ -145,7 +199,7 @@ def process_github_repo(repo, download_dir, max_retries=3):
                 from Source_Identification.analyze_assignments import run_analysis
                 print(f"开始对仓库 {full_repo_name} 进行 AST 分析...")
                 # 调用 run_analysis 函数，传入下载的仓库路径
-                run_analysis(target_dir)
+                run_analysis(target_dir, language=language)
                 print(f"仓库 {full_repo_name} 的 AST 分析完成。")
             except ImportError:
                 print("错误: 无法导入 analyze_assignments 模块。请确保 analyze_assignments.py 在正确的路径下。")
@@ -157,7 +211,7 @@ def process_github_repo(repo, download_dir, max_retries=3):
                 from Source_Identification.confirm_source import run_confirm_source
                 print(f"开始对仓库 {full_repo_name} 进行 LLM 调用确认...")
                 # project_name 可以从 full_repo_name 获取
-                run_confirm_source(target_dir)
+                run_confirm_source(target_dir, language=language)
                 print(f"仓库 {full_repo_name} 的 LLM 调用确认完成。")
             except ImportError:
                 print("错误: 无法导入 confirm_source 模块。请确保 confirm_source.py 在正确的路径下。")
@@ -170,16 +224,26 @@ def process_github_repo(repo, download_dir, max_retries=3):
                 print(f"开始为仓库 {full_repo_name} 生成 Pysa Source...")
                 project_name = unique_dir_name # project_name 就是 unique_dir_name
                 json_file = f'{target_dir}/source/llm_analysis_{project_name}.json'
-                output_file = f'{target_dir}/source/self_llm_source_{project_name}.pysa'
-                extract_and_format_llm_paths(json_file, output_file)
-                print(f"仓库 {full_repo_name} 的 Pysa Source 生成完成。")
+                if backend.lower() == "codeql":
+                    output_file = (config or {}).get(
+                        "source_records",
+                        f'{target_dir}/source/codeql_sources.json',
+                    )
+                    if config and not os.path.isabs(output_file):
+                        output_file = os.path.join(
+                            config.get("project_root", os.getcwd()), output_file
+                        )
+                else:
+                    output_file = f'{target_dir}/source/self_llm_source_{project_name}.pysa'
+                extract_and_format_llm_paths(json_file, output_file, backend=backend)
+                print(f"仓库 {full_repo_name} 的 {backend} Source 生成完成。")
             except ImportError:
                 print("错误: 无法导入 make_pysa_source 模块。请确保 make_pysa_source.py 在正确的路径下。")
             except Exception as e:
                 print(f"为仓库 {full_repo_name} 生成 Pysa Source 时发生错误: {str(e)}")
 
             # 检查是否有问题
-            has_issue = run_pysa_check(target_dir)
+            has_issue = run_pysa_check(target_dir, backend=backend, config=config)
 
             if has_issue:
                 try:
@@ -280,10 +344,10 @@ def read_repos_from_json(file_path):
 # 添加线程锁用于同步文件写入
 file_lock = threading.Lock()
 
-def process_github_repo_with_lock(repo_url, download_dir, max_retries=3):
+def process_github_repo_with_lock(repo_url, download_dir, max_retries=3, language="python", backend="pysa", config=None):
     """带有文件锁的仓库处理函数"""
     try:
-        return process_github_repo(repo_url, download_dir, max_retries)
+        return process_github_repo(repo_url, download_dir, max_retries, language, backend, config)
     except Exception as e:
         # 从 URL 中解析出 full_repo_name 用于错误日志
         full_repo_name = repo_url.replace("https://github.com/", "").replace(".git", "")

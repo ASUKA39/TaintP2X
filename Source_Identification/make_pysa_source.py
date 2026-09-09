@@ -2,7 +2,7 @@ import json
 import os
 import re
 
-def extract_and_format_llm_paths(json_file_path, output_file_path):
+def extract_and_format_llm_paths(json_file_path, output_file_path, backend="pysa"):
     """
     从JSON文件中提取LLM函数的full_method_path和参数，并格式化写入文件。
     """
@@ -27,7 +27,24 @@ def extract_and_format_llm_paths(json_file_path, output_file_path):
                 formatted_line = f"def {full_method_path}( {params} ) -> TaintSource[LLMControlled]: ..."
                 llm_functions.append(formatted_line)
 
-    if llm_functions:
+    if backend.lower() == "codeql":
+        # CodeQL consumes the same confirmed source records through its model
+        # generator.  Keep this function as the backend switch so callers do
+        # not need a second source-generation pipeline.
+        with open(output_file_path, 'w', encoding='utf-8') as f:
+            json.dump({"sources": [
+                {
+                    "full_method_path": entry.get("full_method_path"),
+                    "method": entry.get("method_name"),
+                    "module": entry.get("module"),
+                    "attribute": entry.get("attribute_name"),
+                    "line": entry.get("attribute_line"),
+                    "reason": entry.get("reason", ""),
+                }
+                for entry in data if entry.get('is_llm_call') is True
+            ]}, f, indent=2, ensure_ascii=False)
+        print(f"成功将LLM函数路径写入 CodeQL source records：{output_file_path}")
+    elif llm_functions:
         with open(output_file_path, 'w', encoding='utf-8') as f:
             for line in llm_functions:
                 f.write(line + '\n')

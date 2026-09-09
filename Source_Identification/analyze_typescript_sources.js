@@ -14,7 +14,16 @@
 
 const fs = require('fs')
 const path = require('path')
-const ts = require('typescript')
+let ts
+try {
+  ts = require('typescript')
+} catch (error) {
+  try {
+    ts = require(path.join(projectRoot, 'node_modules', 'typescript'))
+  } catch (targetError) {
+    throw new Error('TypeScript compiler API is not installed; install the target project dependencies before source identification')
+  }
+}
 
 const projectRoot = path.resolve(process.argv[2] || '.')
 const outputPath = path.resolve(process.argv[3] || path.join(projectRoot, 'source', `analysis_source_${path.basename(projectRoot)}.json`))

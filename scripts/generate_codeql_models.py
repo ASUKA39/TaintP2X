@@ -27,10 +27,11 @@ def property_predicate(names: list[str]) -> str:
 
 
 def source_class(name: str, spec: dict) -> str:
+    class_name = name if name.endswith("Source") else f"{name}Source"
     calls = spec.get("call_names", [])
     props = spec.get("property_names", [])
-    return f'''  class {name}Source extends TaintP2XSource {{
-    {name}Source() {{
+    return f'''  class {class_name} extends TaintP2XSource {{
+    {class_name}() {{
       exists(DataFlow::CallNode call | ({call_predicate(calls)} and this = call))
       or
       exists(DataFlow::PropRead read | ({property_predicate(props)} and this = read))
@@ -42,6 +43,7 @@ def source_class(name: str, spec: dict) -> str:
 
 
 def sink_class(name: str, spec: dict) -> str:
+    class_name = name if name.endswith("Sink") else f"{name}Sink"
     calls = spec.get("call_names", [])
     props = spec.get("property_names", [])
     globals_ = spec.get("global_names", [])
@@ -57,8 +59,8 @@ def sink_class(name: str, spec: dict) -> str:
             "this = invocation.getAnArgument())"
         )
     condition = "\n      or\n      ".join(clauses) if clauses else "false"
-    return f'''  class {name}Sink extends TaintP2XSink {{
-    {name}Sink() {{
+    return f'''  class {class_name} extends TaintP2XSink {{
+    {class_name}() {{
       {condition}
     }}
 

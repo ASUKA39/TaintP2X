@@ -13,8 +13,21 @@ except ImportError:  # Support running this file directly from its directory.
 llm_client = LLMClient()
 
 # 修改analyze_model_calls函数
-def analyze_model_calls(method_code: str) -> Dict:
-    prompt = """
+def analyze_model_calls(method_code: str, language: str = "python") -> Dict:
+    if language.lower() in {"typescript", "javascript", "ts", "js"}:
+        prompt = """
+        Determine whether the following TypeScript/JavaScript function calls an
+        LLM or returns model output. Return only JSON with the fields
+        {\"method_name\": <string>, \"is_llm_call\": <boolean>,
+        \"reason\": <short explanation>}.
+        Candidate SDKs include OpenAI, Anthropic, LangChain, Google, Ollama,
+        Groq, Mistral, Cohere, Vercel AI, and other model clients.
+
+        Function:
+        {method_code}
+        """
+    else:
+        prompt = """
         请分析以下Python代码是否调用了大模型(如LLM、GPT等)并在返回值中返回了大模型的输出。
         请以JSON格式返回结果：
             {{
@@ -29,7 +42,7 @@ def analyze_model_calls(method_code: str) -> Dict:
     
     return llm_client.analyze_code(prompt, method_code)
 
-def extract_method_implementations(json_file_path: str) -> List[Dict]:
+def extract_method_implementations(json_file_path: str, language: str = "python") -> List[Dict]:
     """
     Extracts method implementations (excluding __init__) from a JSON analysis file.
 
@@ -70,6 +83,27 @@ def extract_method_implementations(json_file_path: str) -> List[Dict]:
 
         # Skip __init__ methods
         if method_name == '__init__':
+            continue
+
+        # TypeScript frontend already provides the implementation text.  Keep
+        # the same record shape consumed by the original confirmation loop.
+        if language.lower() in {"typescript", "javascript", "ts", "js"}:
+            method_code = item.get("method_code")
+            if not method_code:
+                print(f"Skipping TypeScript item without method_code: {item}")
+                continue
+            extracted_methods.append({
+                "file_path": file_path,
+                "class_name": class_name or "",
+                "method_name": method_name,
+                "start_line": start_line or item.get("line", 1),
+                "end_line": end_line or item.get("line", 1),
+                "attribute_name": attribute_name or item.get("attribute", ""),
+                "attribute_line": attribute_line or item.get("line", 1),
+                "method_code": method_code,
+                "method_params": method_params,
+                "module": item.get("module", ""),
+            })
             continue
 
         # Ensure required fields are present
@@ -114,7 +148,7 @@ def extract_method_implementations(json_file_path: str) -> List[Dict]:
     return extracted_methods
 
 
-def construct_full_method_path(project_name: str, method_info: Dict) -> str:
+def construct_full_method_path(project_name: str, method_info: Dict, language: str = "python") -> str:
     """
     Constructs the full method path from project name, file path, class name, and method name.
     e.g., langroid.language_models.openai_gpt.OpenAIGPT._generate
@@ -129,6 +163,15 @@ def construct_full_method_path(project_name: str, method_info: Dict) -> str:
     Returns:
         Full method path, e.g., "langroid.language_models.openai_gpt.OpenAIGPT._generate".
     """
+    if language.lower() in {"typescript", "javascript", "ts", "js"}:
+        module = method_info.get("module", "").replace("/", ".")
+        class_name = method_info.get("class_name")
+        method_name = method_info.get("method_name", "")
+        if module:
+            module = module.rsplit(".", 1)[0] if "." in module else module
+            return ".".join(part for part in (module, class_name, method_name) if part)
+        return ".".join(part for part in (class_name, method_name) if part)
+
     file_path = method_info['file_path']
     
     # Find the first occurrence of project_name in the path
@@ -157,7 +200,7 @@ def construct_full_method_path(project_name: str, method_info: Dict) -> str:
     return full_method_path
 
 
-def run_confirm_source(project_root):
+def run_confirm_source(project_root, language="python"):
 
     project_name = os.path.basename(project_root)
 
@@ -167,7 +210,7 @@ def run_confirm_source(project_root):
     print(f"Analyzing attribute uses from {json_file}...")
     print("--------------------------------------------------")
 
-    methods_to_analyze = extract_method_implementations(json_file)
+    methods_to_analyze = extract_method_implementations(json_file, language)
 
     all_analysis_results = []
 
@@ -181,7 +224,7 @@ def run_confirm_source(project_root):
         print("--- Method Implementation ---")
         print(method_info['method_code'])
 
-        analysis_response = analyze_model_calls(method_info['method_code'])
+        analysis_response = analyze_model_calls(method_info['method_code'], language)
         print("--- LLM Call Analysis Raw Response ---")
         print(json.dumps(analysis_response, indent=4))
 
@@ -196,7 +239,7 @@ def run_confirm_source(project_root):
                     method_info.update(extracted_analysis)
 
                     if extracted_analysis.get('is_llm_call'):
-                        full_method_path = construct_full_method_path(project_name, method_info)
+                        full_method_path = construct_full_method_path(project_name, method_info, language)
                         method_info['full_method_path'] = full_method_path
                         print(f"Full LLM Method Path: {full_method_path}")
 
