@@ -60,9 +60,9 @@ docker run --rm --platform linux/amd64 taintp2x:baseline bash -lc '
 
 ### TypeScript 输入和 artifact 布局
 
-通用配置文件是 `TYPESCRIPT_REPRODUCTION_CONFIG.json`，至少提供目标仓库 URL、固定 ref/commit、源码目录、CodeQL 数据库目录、查询路径、CodeQL CLI/QL pack 路径和目标依赖安装命令。所有源码、数据库、Source Identification 输出和 SARIF 均放在 `.workspace/`；镜像构建上下文不会复制 `.workspace`。
+通用配置文件是 `config.json`，至少提供目标仓库 URL、固定 ref/commit、源码目录、CodeQL 数据库目录、查询路径、CodeQL CLI/QL pack 路径和目标依赖安装命令。所有源码、数据库、Source Identification 输出和 SARIF 均放在 `.workspace/`；镜像构建上下文不会复制 `.workspace`。
 
-本次示例的目标是 `FlowiseAI/Flowise` 的 `2.2.6`（commit `da04289ecf1c25dc4894737e9d00eac9f6d9ec7d`），配置文件为 `TYPESCRIPT_REPRODUCTION_CONFIG.json`，源码目录为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6`，通用查询为 `CodeQL_Queries/TaintP2X.ql`。
+本次示例的目标是 `FlowiseAI/Flowise` 的 `2.2.6`（commit `da04289ecf1c25dc4894737e9d00eac9f6d9ec7d`），配置文件为 `config.json`，源码目录为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6`，规则查询目录为 `CodeQL_Queries/rules`。
 
 ### TypeScript Step 1：构建独立迁移镜像
 
@@ -123,7 +123,7 @@ test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = \
 
 ### TypeScript Step 4：准备目标依赖
 
-目标仓库若需要依赖或构建，使用 `TYPESCRIPT_REPRODUCTION_CONFIG.json` 中的 `install_command` 和 `build_command`，在迁移镜像内的目标源码根目录执行。CodeQL JavaScript/TypeScript extractor 对本次 Flowise 数据库不要求先完成项目构建，但本次复现仍先完成依赖安装，以验证配置中的准备步骤可用。
+目标仓库若需要依赖或构建，使用 `config.json` 中的 `install_command` 和 `build_command`，在迁移镜像内的目标源码根目录执行。CodeQL JavaScript/TypeScript extractor 对本次 Flowise 数据库不要求先完成项目构建，但本次复现仍先完成依赖安装，以验证配置中的准备步骤可用。
 
 本次示例配置的依赖命令为：
 
@@ -211,10 +211,10 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --mount type=bind,src="<CODEQL_CLI_CHECKOUT>",dst=/taintp2x/.workspace/codeql-cli-2.23.2,readonly \
   --mount type=bind,src="<CODEQL_REPO_CHECKOUT>",dst=/taintp2x/.workspace/codeql-repo,readonly \
   --workdir /taintp2x taintp2x:typescript bash -lc \
-  'python scripts/run_typescript_codeql.py --config TYPESCRIPT_REPRODUCTION_CONFIG.json'
+  'python scripts/run_typescript_codeql.py --config config.json'
 ```
 
-`scripts/run_typescript_codeql.py` 会在已有 Source Identification artifact 时跳过确认阶段，从 `CodeQL_Models/taintp2x_models.json` 生成 `CodeQL_Queries/TaintP2XModels.qll`，按配置创建数据库，最后执行固定的 `CodeQL_Queries/TaintP2X.ql` 并写出 SARIF。查询只实现一次通用 Source → Sink 连通性求解；API、Source、Sink、Sanitizer 和传播规则均来自模型清单，不依赖仓库名或具体 CVE。
+`scripts/run_typescript_codeql.py` 会在已有 Source Identification artifact 时跳过确认阶段，按 `taint.config` 生成原版 500x/600x 规则查询，按配置创建数据库并写出 SARIF，同时将路径适配为原版验证器的 `taint-output.json`。Source、Sink、Transform 和规则身份由迁移后的 CodeQL 模型实现，不依赖仓库名或具体 CVE。
 
 本次实际运行使用：
 
@@ -225,7 +225,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --mount type=bind,src="/data/AgentSecStudy/tools/iris/.workspace/codeql-repo",dst=/taintp2x/.workspace/codeql-repo,readonly \
   --workdir /taintp2x taintp2x:typescript bash -lc \
   'python scripts/run_typescript_codeql.py \
-    --config TYPESCRIPT_REPRODUCTION_CONFIG.json'
+    --config config.json'
 ```
 
 本次测试按配置重新创建了 `.workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2025-55346_2.2.6` 数据库，输出 `.workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif`。
@@ -239,29 +239,11 @@ jq '{count:(.runs[0].results|length), results:[.runs[0].results[]|{ruleId,messag
   .workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif
 ```
 
-本次通用查询输出 72 条跨类别告警，其中包含 `LLMControlled → RemoteCodeExecution` 到 `packages/components/nodes/tools/CustomTool/CustomTool.ts:121` 的路径，即 `new Function('z', \`return ${customToolSchema}\`)`。查询本身不包含该仓库或该漏洞的专用逻辑；若需要新增 SDK 或 Sink，只修改模型清单并重新生成模型模块。
+本次规则查询按原版规则分别输出 SARIF 告警；查询本身不包含该仓库或该漏洞的专用逻辑。若需要新增 SDK 或 Sink，只修改对应 CodeQL 模型并重新生成规则/Source 模块。
 
-### TypeScript Step 8：LLM 后验证
+### TypeScript Step 8：原版 LLM 后验证
 
-CodeQL 只负责计算通用污点路径；后验证由 `scripts/validate_codeql_results.py` 完成。它读取 SARIF 的每条告警及全部 `codeFlows`，从目标源码提取路径位置上下文，使用配置的 OpenAI-compatible 模型按原版 TaintP2X 结果契约判断污点路径是否构成漏洞，并返回 `is_vulnerability`、`reason` 和 `triggering_conditions`。该阶段是静态审计，不运行目标代码；模型调用失败的条目直接跳过。
-
-通用命令：
-
-```bash
-docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
-  --mount type=bind,src="$PWD",dst=/taintp2x \
-  --workdir /taintp2x \
-  -e OPENAI_API_KEY="$OPENAI_API_KEY" \
-  -e OPENAI_BASE_URL="https://api.deepseek.com" \
-  -e OPENAI_MODEL="deepseek-v4-flash" \
-  -e OPENAI_EXTRA_BODY='{"thinking":{"type":"disabled"}}' \
-  taintp2x:typescript bash -lc \
-  'python scripts/validate_codeql_results.py \
-    --sarif .workspace/codeql-results/<TARGET>.sarif \
-    --source-root .workspace/project-sources/<TARGET> \
-    --output .workspace/codeql-validation/<TARGET>.md \
-    --workers 4'
-```
+CodeQL 只替换 Pysa 的静态污点后端；`scripts/run_typescript_codeql.py` 将 SARIF 路径适配为原版 `taint-output.json`，随后调用 `SourceDeterminer` 和 `FullyDeterminer`。两阶段继续写入原版 issue 目录及 `response_output.json`、`analysis_results.json` 等 artifact。该阶段是静态审计，不运行目标代码；模型调用失败的条目不写入伪造结果。
 
 本次 Flowise 测试对包含 `RemoteCodeExecution` 的告警实际执行后验证，单条报告保存在 `.workspace/codeql-validation/flowise-retest.md`。随后去掉 `--contains` 对全部 72 条告警完成后验证，报告为 `.workspace/codeql-validation/flowise-retest-all.md`，成功后验证 72/72；报告按原版契约记录每条路径的 `is_vulnerability`、原因和触发条件。
 
