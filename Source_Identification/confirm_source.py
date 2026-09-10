@@ -17,7 +17,7 @@ def analyze_model_calls(method_code: str, language: str = "python") -> Dict:
     if language.lower() in {"typescript", "javascript", "ts", "js"}:
         prompt = """
         Determine whether the following TypeScript/JavaScript function calls an
-        LLM or returns model output. Return only JSON with the fields
+        LLM and returns the model output. Return only JSON with the fields
         {{\"method_name\": <string>, \"is_llm_call\": <boolean>,
         \"reason\": <short explanation>}}.
         Candidate SDKs include OpenAI, Anthropic, LangChain, Google, Ollama,
@@ -85,6 +85,16 @@ def extract_method_implementations(json_file_path: str, language: str = "python"
         if method_name == '__init__':
             continue
 
+        method_identifier = item.get("function_id") or (
+            file_path,
+            method_name,
+            start_line,
+            end_line,
+        )
+        if method_identifier in processed_methods:
+            continue
+        processed_methods.add(method_identifier)
+
         # TypeScript frontend already provides the implementation text.  Keep
         # the same record shape consumed by the original confirmation loop.
         if language.lower() in {"typescript", "javascript", "ts", "js"}:
@@ -103,6 +113,8 @@ def extract_method_implementations(json_file_path: str, language: str = "python"
                 "method_code": method_code,
                 "method_params": method_params,
                 "module": item.get("module", ""),
+                "function_id": item.get("function_id", ""),
+                "sdk": item.get("sdk", {}),
             })
             continue
 
@@ -110,16 +122,6 @@ def extract_method_implementations(json_file_path: str, language: str = "python"
         if not all([method_name, file_path, start_line, end_line, class_name, attribute_name, attribute_line]):
             print(f"Skipping item due to missing data: {item}")
             continue
-
-        # Create a unique identifier for the method
-        method_identifier = (file_path, method_name, start_line, end_line)
-
-        # Check if this method has already been processed
-        if method_identifier in processed_methods:
-            continue
-
-        # Add the method to the set of processed methods
-        processed_methods.add(method_identifier)
 
         try:
             with open(file_path, 'r', encoding='utf-8') as source_file:
