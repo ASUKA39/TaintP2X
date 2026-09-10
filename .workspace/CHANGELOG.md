@@ -43,3 +43,5 @@
   client and require `OPENAI_MODEL`, removing its embedded provider key/model.
 - Added an explicit final compliance-status section to the migration audit and
   verified Python compilation, unit tests, and whitespace checks.
+- Added an offline end-to-end regression for the Source gate and Fully stage,
+  asserting that the original trace and analysis artifacts are produced.

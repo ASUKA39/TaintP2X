@@ -99,6 +99,62 @@ class TypeScriptContextTests(unittest.TestCase):
             self.assertTrue(context.exists())
             self.assertIn("answer", context.read_text(encoding="utf-8"))
 
+    def test_fully_stage_runs_after_source_gate_and_writes_original_artifacts(self):
+        class Fake:
+            def __init__(self):
+                self.calls = 0
+
+            def chat_completion(self, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    value = {
+                        "issue_number": 1,
+                        "is_taint_valid": True,
+                        "has_sanitizer": False,
+                        "sanitizer_functions": [],
+                        "function_analysis": [],
+                        "analysis_reason": "path reaches sink",
+                    }
+                else:
+                    value = {
+                        "issue_number": 1,
+                        "is_vulnerability": True,
+                        "reason": "sink is reachable",
+                        "triggering_conditions": "attacker controls the prompt",
+                    }
+                return {"choices": [{"message": {"content": json.dumps(value)}}]}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "demo"
+            (project / "src").mkdir(parents=True)
+            (project / "src" / "agent.ts").write_text(
+                "export function answer(prompt: string) {\n"
+                "  return prompt;\n"
+                "}\n", encoding="utf-8"
+            )
+            logs = root / "logs" / "demo" / "1"
+            logs.mkdir(parents=True)
+            (logs / "response_output.json").write_text(
+                json.dumps({"is_vulnerability": True}), encoding="utf-8"
+            )
+            taint = root / "taint.json"
+            taint.write_text(json.dumps([{"kind": "issue", "data": {
+                "callable": "src/agent.ts",
+                "codeql_path": [{
+                    "function": "answer", "file_path": "src/agent.ts",
+                    "line": 2, "start_line": 1, "params": "prompt",
+                }],
+            }}]), encoding="utf-8")
+            determiner = FullyDeterminer(str(root), str(root / "logs"), language="typescript")
+            determiner.llm_client = Fake()
+            determiner.process_project("demo", str(taint), str(root / "logs"))
+            self.assertTrue((logs / "trace_chain.log").exists())
+            result = logs / "analysis_results.json"
+            self.assertTrue(result.exists())
+            self.assertTrue(json.loads(result.read_text(encoding="utf-8"))[
+                "analysis"]["chain_analysis"]["is_vulnerability"])
+
 
 if __name__ == "__main__":
     unittest.main()
