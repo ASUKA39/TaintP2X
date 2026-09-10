@@ -17,7 +17,7 @@ from run_download_and_check import run_pysa_check
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="TYPESCRIPT_REPRODUCTION_CONFIG.json")
+    parser.add_argument("--config", default="config.json")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     config_path = Path(args.config)
