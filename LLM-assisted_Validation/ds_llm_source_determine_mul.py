@@ -52,31 +52,12 @@ class SourceDeterminer:
 """
         if language.lower() in {"typescript", "javascript", "ts", "js"}:
             self.system_prompt = """
-You are the source-identification stage of a static taint-analysis review.
-Do not execute code. Determine whether the reported CodeQL source is plausibly
-attacker-controlled and identify the entry point from the available evidence.
-Return JSON only: {\"is_attacker_controlled\": true or false,
-\"attacker_entry_point\": \"...\", \"reason\": \"...\"}.
-If the evidence is insufficient, use false and explain why.
+You are a software security expert identifying source functions in a TypeScript
+or JavaScript project. Perform a static audit only; do not execute code.
+Determine whether the function requests an LLM conversational API. Return JSON
+only with issue_number, is_vulnerability (boolean), reason, and
+triggering_conditions. The function is the first function in the reported path.
 """
-
-    def confirm_codeql_finding(self, finding, context, issue_number):
-        """Run the original SourceDeterminer stage on one CodeQL finding."""
-        prompt = (
-            f"{self.system_prompt}\nIssue {issue_number}\n"
-            f"CodeQL finding:\n{json.dumps(finding, ensure_ascii=False)}\n"
-            f"Source context:\n{context}"
-        )
-        response = self.llm_client.complete(prompt)
-        content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
-        try:
-            return json.loads(content)
-        except (TypeError, json.JSONDecodeError):
-            return {
-                "is_attacker_controlled": False,
-                "attacker_entry_point": "Not-Sure",
-                "reason": "Source confirmation returned no readable JSON.",
-            }
 
     def process_project(self, project_name, taint_output_file):
         """

@@ -23,3 +23,4 @@
 - Corrected CodeQL project-function path matching to use `getRelativePath()`'s actual path form and mapped confirmed function returns to `LLMControlled` Source nodes. A direct database query now confirms four Source return nodes in Flowise's confirmed Airtable agent function.
 - Removed the independent SARIF Markdown validator and renamed the TypeScript reproduction configuration to `config.json`.
 - Updated `REPRODUCTION_GUIDE.md` to describe the rule-directory driver, SARIF compatibility artifact, and original Source/Fully validation stages; removed stale validator commands and old unified-query claims.
+- Removed the dead heuristic CodeQL model generator and the remaining attack-entry-point/`Not-Sure` CodeQL validator fallback. TypeScript Source validation now uses the original `is_vulnerability` contract only.
