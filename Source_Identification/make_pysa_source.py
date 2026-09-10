@@ -37,8 +37,10 @@ def extract_and_format_llm_paths(json_file_path, output_file_path, backend="pysa
                     "full_method_path": entry.get("full_method_path"),
                     "method": entry.get("method_name"),
                     "module": entry.get("module"),
-                    "attribute": entry.get("attribute_name"),
-                    "line": entry.get("attribute_line"),
+                    "class": entry.get("class_name", ""),
+                    "start_line": entry.get("start_line"),
+                    "end_line": entry.get("end_line"),
+                    "function_id": entry.get("function_id", ""),
                     "reason": entry.get("reason", ""),
                 }
                 for entry in data if entry.get('is_llm_call') is True

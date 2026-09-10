@@ -10,11 +10,17 @@ module TaintP2XModels {
     abstract string getCategory();
   }
 
+  predicate isConfirmedLLMFunction(Function function) {
+    none()
+  }
+
   class LLMControlledSource extends TaintP2XSource {
     LLMControlledSource() {
-      exists(DataFlow::CallNode call | (call.getCalleeName() in ["acomplete", "agenerate", "ainvoke", "call", "chat", "complete", "createChatCompletion", "generate", "generateContent", "invoke", "stream"] and this = call))
-      or
-      exists(DataFlow::PropRead read | (read.getPropertyName() in ["content", "text", "response", "output", "customToolSchema"] and this = read))
+      exists(DataFlow::CallNode call, Function function |
+        isConfirmedLLMFunction(function) and
+        call.getACallee() = function and
+        this = call
+      )
     }
 
     override string getKind() { result = "LLMControlled" }

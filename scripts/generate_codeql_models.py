@@ -26,8 +26,41 @@ def property_predicate(names: list[str]) -> str:
     return f"read.getPropertyName() in {values(names)}"
 
 
-def source_class(name: str, spec: dict) -> str:
+def confirmed_function_predicate(records: list[dict]) -> str:
+    clauses = []
+    for record in records:
+        module = record.get("module")
+        method = record.get("method")
+        start_line = record.get("start_line")
+        end_line = record.get("end_line")
+        if not module or not method or not start_line or not end_line:
+            continue
+        clauses.append(
+            "("
+            f"function.getFile().getRelativePath() = {ql_string(module)} and "
+            f"function.getName() = {ql_string(method)} and "
+            f"function.getLocation().getStartLine() = {start_line} and "
+            f"function.getLocation().getEndLine() = {end_line}"
+            ")"
+        )
+    return "\n    or\n    ".join(clauses) if clauses else "none()"
+
+
+def source_class(name: str, spec: dict, confirmed_sources: list[dict]) -> str:
     class_name = name if name.endswith("Source") else f"{name}Source"
+    if name == "LLMControlled":
+        return f'''  class {class_name} extends TaintP2XSource {{
+    {class_name}() {{
+      exists(DataFlow::CallNode call, Function function |
+        isConfirmedLLMFunction(function) and
+        call.getACallee() = function and
+        this = call
+      )
+    }}
+
+    override string getKind() {{ result = "{name}" }}
+  }}
+'''
     calls = spec.get("call_names", [])
     props = spec.get("property_names", [])
     return f'''  class {class_name} extends TaintP2XSource {{
@@ -76,15 +109,12 @@ def main() -> None:
     parser.add_argument("--source-records", help="Confirmed Source JSON; method attributes are merged into the model")
     args = parser.parse_args()
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
+    confirmed_sources = []
     if args.source_records:
         records = json.loads(Path(args.source_records).read_text(encoding="utf-8"))
-        confirmed = records.get("sources", records if isinstance(records, list) else [])
-        source = manifest.setdefault("sources", {}).setdefault("LLMControlled", {})
-        names = set(source.setdefault("call_names", []))
-        for record in confirmed:
-            if record.get("attribute"):
-                names.add(record["attribute"])
-        source["call_names"] = sorted(names)
+        confirmed_sources = records.get(
+            "sources", records if isinstance(records, list) else []
+        )
     output = Path(args.output)
     text = [
         "/** Generated from CodeQL_Models/taintp2x_models.json; edit the manifest, not this file. */",
@@ -99,9 +129,13 @@ def main() -> None:
         "    abstract string getCategory();",
         "  }",
         "",
+        "  predicate isConfirmedLLMFunction(Function function) {",
+        f"    {confirmed_function_predicate(confirmed_sources)}",
+        "  }",
+        "",
     ]
     for name, spec in manifest.get("sources", {}).items():
-        text.append(source_class(name, spec))
+        text.append(source_class(name, spec, confirmed_sources))
     for name, spec in manifest.get("sinks", {}).items():
         text.append(sink_class(name, spec))
     sanitizer_names = manifest.get("sanitizers", {}).get("call_names", [])
