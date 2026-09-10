@@ -30,23 +30,11 @@ def run_codeql_check(folder, config):
     ))
     query = os.path.join(root, config["codeql_query"])
     codeql_repo = os.path.join(root, config["codeql_repo"])
-    manifest = os.path.join(root, config["models_manifest"])
-    generated_models = os.path.join(root, config["generated_models"])
-    source_records = config.get(
-        "source_records", os.path.join(folder, "source", "codeql_sources.json")
-    )
-    if source_records:
-        source_records = os.path.join(root, source_records)
-
-    os.makedirs(os.path.dirname(generated_models), exist_ok=True)
-    model_command = [
-        "python", os.path.join(root, "scripts", "generate_codeql_models.py"),
-        manifest, generated_models,
-    ]
-    if source_records and os.path.exists(source_records):
-        model_command.extend(["--source-records", source_records])
-    subprocess.run(model_command, check=True)
-
+    rules_manifest = os.path.join(root, config.get("models_manifest", "CodeQL_Models/taintp2x_models.json"))
+    rules_generator = os.path.join(root, "scripts", "generate_codeql_rules.py")
+    rules_dir = query if os.path.isdir(query) else os.path.dirname(query)
+    if os.path.exists(rules_generator) and os.path.exists(rules_manifest):
+        subprocess.run(["python", rules_generator, rules_manifest, rules_dir], check=True)
     database_parent = os.path.dirname(database)
     os.makedirs(database_parent, exist_ok=True)
     subprocess.run([
@@ -137,7 +125,7 @@ def run_project_pipeline(folder, language="python", backend="pysa", config=None)
     analysis_file = os.path.join(folder, "source", f"llm_analysis_{project_name}.json")
     if backend.lower() == "codeql":
         output_file = (config or {}).get(
-            "source_records", os.path.join(folder, "source", "codeql_sources.json")
+            "generated_sources", "CodeQL_Queries/TaintP2XProjectSources.qll"
         )
         if config and not os.path.isabs(output_file):
             output_file = os.path.join(config.get("project_root", os.getcwd()), output_file)

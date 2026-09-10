@@ -154,7 +154,6 @@ path; triggering_conditions should describe how the path can be reached.
         deepseek_input = f"Issue {issue_number}\n{self.system_prompt}\n\nTrace info:\n {context}\n"
         try:
             response_data = self.llm_client.chat_completion(
-                model="deepseek-ai/DeepSeek-V3",
                 messages=[{"role": "user", "content": deepseek_input}],
                 temperature=0,
                 max_tokens=1024,

@@ -554,7 +554,6 @@ If the evidence is insufficient, use false and explain why.
 
             try:
                 response_data = self.llm_client.chat_completion(
-                    model="deepseek-ai/DeepSeek-V3",
                     messages=[
                         {
                             "role": "user",
@@ -628,5 +627,4 @@ If the evidence is insufficient, use false and explain why.
 
 #     # 检查并合并重复的 issues
 #     check_and_merge_duplicate_issues(project_name)
-
 
