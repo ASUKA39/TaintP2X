@@ -201,16 +201,16 @@
 
 处理结论：已完成初步核对。指南当前使用 `config.json`、规则目录和原版验证入口；最终交付前仍需从干净 `.workspace` 重跑一次，以核对命令、路径和实际 artifact。
 
-## 七、结论和修正优先级
+## 七、结论和修正状态
 
-### 必须删除或收敛
+本次审计列出的迁移偏差已按以下原则处理：
 
-1. 删除 `LLM-in-the-Loop`、`traditional`、`Not-Sure` 及其统计、Prompt 字段和报告字段。
-2. 不再以独立的新验证器替换原版验证流程；应将 CodeQL SARIF/path 适配到原有 `SourceDeterminer` 和 `FullyDeterminer` 的输入契约。
-3. 恢复原版 Source 确认职责、`vulnerability_types` 字段和 FullyDeterminer 阶段。
-4. Source/Sink 必须按模块、类、函数、调用位置或等价 CodeQL 语义精确匹配，不能使用全局通用属性名和任意参数。
-5. 迁移原版 `FromUrlLLMControlled`、Transform、隐式 Source、规则码和规则消息；无法在 TypeScript/CodeQL 中等价表达的规则应明确记录为“不迁移”，不能静默改成更宽的规则。
-6. 恢复 `LLMClient` 的参数传递语义，保持原调用接口行为。
+1. 不生成研究用的 `LLM-in-the-Loop`、`traditional`、`Not-Sure` 分类。
+2. CodeQL SARIF/path 通过兼容适配器进入原版 `SourceDeterminer` 和 `FullyDeterminer`，没有独立 validator 流程。
+3. Source、Sink、Transform、隐式 URL Source、规则编号和消息按可证明的 TypeScript/CodeQL 语义迁移；没有可靠对等语义的 Python 专用能力明确保持为空。
+4. Source/Sink 使用项目函数身份、官方安全概念和精确调用上下文，不使用全局通用名称兜底。
+5. LLM 通信保留消息顺序、角色和调用方参数，模型、端点和凭据全部由运行时配置提供。
+6. 验证阶段保留原版 issue 目录和中间文件契约；最终干净工作区复现只用于核对环境差异和文档，不改变分析语义。
 
 ### 可以保留
 

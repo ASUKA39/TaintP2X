@@ -22,7 +22,9 @@ class LLMClient:
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
             raise ValueError("OPENAI_API_KEY is required for LLM source confirmation")
-        self.model = model or os.environ.get("OPENAI_MODEL", "deepseek-v4-flash")
+        self.model = model or os.environ.get("OPENAI_MODEL")
+        if not self.model:
+            raise ValueError("OPENAI_MODEL is required for LLM source confirmation")
         configured_base_url = base_url or os.environ.get(
             "OPENAI_BASE_URL", "https://api.deepseek.com"
         )

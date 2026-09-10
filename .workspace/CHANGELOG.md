@@ -39,3 +39,7 @@
 - Reconciled the compliance audit and reproduction guide with the current
   implementation, including the actual zero-finding Flowise CodeQL run and
   the absence of issue-level validation artifacts when no path is reported.
+- Made the legacy code-extraction helper use the same runtime-configured LLM
+  client and require `OPENAI_MODEL`, removing its embedded provider key/model.
+- Added an explicit final compliance-status section to the migration audit and
+  verified Python compilation, unit tests, and whitespace checks.

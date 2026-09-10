@@ -2,6 +2,11 @@ import json
 import os
 import requests
 
+try:
+    from ..Source_Identification.llm_client import LLMClient
+except ImportError:
+    from Source_Identification.llm_client import LLMClient
+
 def extract_method_by_line(file_path: str, target_line: int) -> str:
     """根据指定行号提取内容，小文件取全部，大文件取前200行+目标行上下文，并标明行号和文件名"""
     try:
@@ -147,42 +152,26 @@ def find_target_function_and_extract_code(json_file_path: str, project_base_path
         return None, None
 
 def call_deepseek_api(prompt: str) -> dict:
-    """调用DeepSeek API进行分析"""
-    url = "https://api.siliconflow.cn/v1/chat/completions"
-    payload = {
-        "model": "Pro/deepseek-ai/DeepSeek-V3",
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "temperature": 0,
-        "max_tokens": 1024,
-        "response_format": {"type": "json_object"}
-    }
-    headers = {
-        "Authorization": "Bearer sk-123",
-        "Content-Type": "application/json"
-    }
-
+    """Call the configured OpenAI-compatible provider and return JSON content."""
     try:
-        response = requests.request("POST", url, json=payload, headers=headers)
-        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-        response_data = response.json()
+        response_data = LLMClient().chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=1024,
+            response_format={"type": "json_object"},
+        )
+        if response_data.get("error"):
+            print(f"LLM API调用出错: {response_data['error']}")
+            return {"error": response_data["error"]}
         if 'choices' not in response_data or not response_data['choices']:
-            print("DeepSeek API返回数据格式错误")
-            return {"error": "DeepSeek API返回数据格式错误"}
+            print("LLM API返回数据格式错误")
+            return {"error": "LLM API返回数据格式错误"}
         
         json_content = response_data['choices'][0]['message']['content']
         return json.loads(json_content)
-    except requests.exceptions.RequestException as e:
-        print(f"DeepSeek API调用出错: {e}")
-        return {"error": f"DeepSeek API调用出错: {e}"}
-    except json.JSONDecodeError as e:
-        print(f"JSON解析错误，原始内容：\n{response.text if 'response' in locals() else '无响应内容'}")
-        print(f"错误详情：{e}")
-        return {"error": f"JSON解析错误: {e}"}
+    except Exception as e:
+        print(f"LLM API调用出错: {e}")
+        return {"error": str(e)}
 
 def process_with_deepseek(output_dir: str, line_number: int):
     """将提取的代码发送给DeepSeek API并保存结果"""

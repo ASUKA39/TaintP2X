@@ -211,7 +211,7 @@ Return JSON only with these fields:
 
     def create_folder(self, folder_path):
         if not os.path.exists(folder_path):
-            os.mkdir(folder_path)
+            os.makedirs(folder_path, exist_ok=True)
             print(f"文件夹已创建：{folder_path}")
         else:
             print(f"文件夹已存在，跳过创建：{folder_path}")

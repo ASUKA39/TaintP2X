@@ -6,10 +6,12 @@ import unittest
 from pathlib import Path
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("OPENAI_MODEL", "test-model")
 
 from run_download_and_check import _write_codeql_issue_artifact
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "LLM-assisted_Validation"))
 from ds_llm_fully_determine_mul import FullyDeterminer
+from ds_llm_source_determine_mul import SourceDeterminer
 
 
 class CodeQLArtifactAdapterTests(unittest.TestCase):
@@ -63,6 +65,39 @@ class TypeScriptContextTests(unittest.TestCase):
         self.assertIn("async answer", content)
         self.assertIn("return value", content)
         self.assertNotIn("export class Agent", content)
+
+    def test_source_stage_creates_nested_log_directory_and_extracts_ts(self):
+        class Fake:
+            def chat_completion(self, **kwargs):
+                return {"choices": [{"message": {"content": json.dumps({
+                    "issue_number": 1,
+                    "is_vulnerability": True,
+                    "reason": "calls a conversational model",
+                    "triggering_conditions": "prompt reaches the client",
+                })}}]}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "demo"
+            (project / "src").mkdir(parents=True)
+            (project / "src" / "agent.ts").write_text(
+                "export function answer(prompt: string) {\n"
+                "  return prompt;\n"
+                "}\n", encoding="utf-8"
+            )
+            taint = root / "taint.json"
+            taint.write_text(json.dumps([{"kind": "issue", "data": {
+                "callable": "src/agent.ts",
+                "traces": [{"name": "source", "roots": [{"location": {
+                    "filename": "src/agent.ts", "line": 2
+                }}]}]
+            }}]), encoding="utf-8")
+            determiner = SourceDeterminer(str(root), str(root / "new-logs"), language="typescript")
+            determiner.llm_client = Fake()
+            determiner.process_project("demo", str(taint))
+            context = root / "new-logs" / "demo" / "1" / "context_output.txt"
+            self.assertTrue(context.exists())
+            self.assertIn("answer", context.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

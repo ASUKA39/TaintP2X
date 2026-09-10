@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("OPENAI_MODEL", "test-model")
 
 from Source_Identification.confirm_source import extract_method_implementations
 
