@@ -14,6 +14,18 @@
 
 ## 2026-09-11
 
+- Completed the CodeQL compatibility boundary: SARIF paths now retain ordered
+  source/intermediate/sink locations, original trace names, and a structured
+  `codeql_path` consumed by the existing validators.
+- Restored the FullyDeterminer second-stage whole-chain call after per-function
+  analysis; Source-stage `response_output.json` no longer prevents the final
+  stage from running. Invalid or failed final LLM responses are not serialized
+  as fabricated negative determinations.
+- Added balanced-brace TypeScript/JavaScript function extraction for Source and
+  Fully validation contexts, plus focused adapter and context regression tests.
+- Removed unused heuristic `CodeQL_Models/taintp2x_models.json`, the obsolete
+  unified `CodeQL_Queries/TaintP2X.ql`, and their configuration entries.
+
 - Replaced the temporary unified CodeQL query with rule-specific query generation driven by the original `taint.config` rule table, preserving the 500x/600x rule identities and messages.
 - Added stateful CodeQL flow with the original `FileOperation` state boundary and restored the literal `FromUrlLLMControlled` URL source expression.
 - Removed global property-name Source/Sink fallbacks and retained only precise confirmed project Source calls plus official CodeQL security concepts and package-qualified models.

@@ -3,6 +3,7 @@ import os
 import shutil
 import time
 import json
+from urllib.parse import unquote, urlparse
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
@@ -59,27 +60,78 @@ def run_codeql_check(folder, config):
 
 
 def _write_codeql_issue_artifact(folder, sarif):
-    """Adapt SARIF paths to the original validators' taint-output contract."""
+    """Adapt SARIF paths to the original validators' taint-output contract.
+
+    The original validators consume an issue list with ordered forward and
+    backward trace roots.  CodeQL's thread-flow locations are retained in that
+    order and also stored as ``codeql_path`` so the TypeScript implementation
+    can recover source, intermediate, and sink function context without a
+    second analysis pipeline.
+    """
+    def convert_location(item):
+        physical = item.get("location", {}).get("physicalLocation", {})
+        artifact = physical.get("artifactLocation", {}).get("uri", "")
+        if artifact.startswith("file:"):
+            artifact = unquote(urlparse(artifact).path)
+        artifact = artifact.replace("%SRCROOT%/", "").lstrip("/")
+        region = physical.get("region", {})
+        return {
+            "filename": artifact,
+            "line": region.get("startLine", 1),
+            "start": region.get("startColumn"),
+            "end": region.get("endColumn"),
+        }
+
     issues = []
-    for result in sarif.get("runs", [{}])[0].get("results", []):
+    runs = sarif.get("runs", [])
+    results = runs[0].get("results", []) if runs else []
+    for result in results:
         locations = []
         for flow in result.get("codeFlows", []):
             for thread in flow.get("threadFlows", []):
                 locations.extend(thread.get("locations", []))
         if not locations:
             locations = [{"location": result.get("locations", [{}])[0]}]
-        def location(item):
-            physical = item.get("location", {}).get("physicalLocation", {})
-            artifact = physical.get("artifactLocation", {}).get("uri", "")
-            region = physical.get("region", {})
-            return {"filename": artifact.lstrip("/"), "line": region.get("startLine", 1)}
-        source = location(locations[0])
-        sink = location(locations[-1])
+        path = [convert_location(item) for item in locations]
+        source = path[0]
+        sink = path[-1]
+        codeql_path = [
+            {
+                "function": entry["filename"],
+                "file_path": entry["filename"],
+                "line": entry["line"],
+                "start_line": entry["line"],
+                "params": "",
+                "location": entry,
+            }
+            for entry in path
+        ]
+        forward_root = {
+            "location": source,
+            "leaves": [{"location": sink}],
+            "call": {"position": source, "port": "result"},
+        }
+        backward_root = {
+            "location": sink,
+            "origin": source,
+            "call": {"position": sink, "port": "formal"},
+        }
         issues.append({
             "kind": "issue",
             "data": {
                 "callable": sink["filename"],
-                "traces": [{"name": "source", "roots": [{"location": source}]}],
+                "callable_line": sink["line"],
+                "filename": sink["filename"],
+                "line": sink["line"],
+                "start": sink.get("start"),
+                "end": sink.get("end"),
+                "code": result.get("ruleId", ""),
+                "traces": [
+                    {"name": "source", "roots": [{"location": source}]},
+                    {"name": "forward", "roots": [forward_root]},
+                    {"name": "backward", "roots": [backward_root]},
+                ],
+                "codeql_path": codeql_path,
                 "sink": sink,
                 "rule_code": result.get("ruleId", ""),
                 "message": result.get("message", {}).get("text", ""),

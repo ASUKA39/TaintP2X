@@ -52,11 +52,35 @@ class SourceDeterminer:
 """
         if language.lower() in {"typescript", "javascript", "ts", "js"}:
             self.system_prompt = """
-You are a software security expert identifying source functions in a TypeScript
-or JavaScript project. Perform a static audit only; do not execute code.
-Determine whether the function requests an LLM conversational API. Return JSON
-only with issue_number, is_vulnerability (boolean), reason, and
-triggering_conditions. The function is the first function in the reported path.
+You are a software security expert identifying taint-source functions in a
+TypeScript or JavaScript project. Perform a static audit only; do not execute
+the project. The function shown below is the first function in the reported
+taint path. Determine whether it requests an LLM conversational API and
+returns the model's output. Image-generation-only calls are not conversational
+LLM sources.
+
+Consider the same source categories as the original TaintP2X analysis:
+1. Direct conversational SDK calls, such as OpenAI chat/completions, Anthropic
+   messages, Google Generative AI, DeepSeek, Groq, Mistral, Cohere, Ollama,
+   LangChain, Vercel AI, or another explicitly identifiable model client.
+2. An indirect HTTP request to a recognizable conversational model endpoint,
+   when the URL, request body, headers, and response handling provide evidence
+   that it is an LLM conversation request.
+3. A project wrapper around one of the above APIs, where the call and returned
+   value can be followed through the shown function.
+
+Do not classify a function solely because a file imports an LLM package or
+because it has a generic method/property name such as call, create, run, chat,
+text, response, or output. Use only evidence present in the static snippet.
+
+Return JSON only with these fields:
+{
+  "issue_number": <number>,
+  "is_vulnerability": <boolean>,
+  "reason": <brief evidence-based explanation>,
+  "triggering_conditions": <how the function calls the conversational API and
+                             returns its output, or an empty string>
+}
 """
 
     def process_project(self, project_name, taint_output_file):
@@ -130,7 +154,9 @@ triggering_conditions. The function is the first function in the reported path.
                 print(f"警告: 无法找到文件 {target_path}")
                 continue
             
-            method_content = self.extract_method_by_line(final_path, source_info['line_number'])
+            method_content = self.extract_method_by_line(
+                final_path, source_info['line_number'], language=self.language
+            )
             
             context_file = os.path.join(issue_dir, "context_output.txt")
             with open(context_file, "w") as f:
@@ -250,8 +276,12 @@ triggering_conditions. The function is the first function in the reported path.
             print(f"提取结果已写入 {output_file}")
         return results
 
-    def extract_method_by_line(self, file_path: str, target_line: int) -> str:
+    def extract_method_by_line(self, file_path: str, target_line: int, language=None) -> str:
         """根据指定行号提取整个方法内容"""
+        if language is None:
+            language = self.language
+        if language.lower() in {"typescript", "javascript", "ts", "js"}:
+            return self._extract_typescript_function(file_path, target_line)
         try:
             with open(file_path, 'r') as file:
                 lines = file.readlines()
@@ -316,6 +346,55 @@ triggering_conditions. The function is the first function in the reported path.
             return "文件不存在"
         except Exception as e:
             return f"提取方法时出错：{str(e)}"
+
+    @staticmethod
+    def _extract_typescript_function(file_path: str, target_line: int) -> str:
+        """Extract a TypeScript/JavaScript function using balanced braces.
+
+        CodeQL reports a line inside a function, while the original extractor
+        used Python indentation.  Bracket balancing preserves the same
+        function-level context for TypeScript methods, arrows, and callbacks
+        without interpreting or executing the target project.
+        """
+        try:
+            with open(file_path, "r", encoding="utf-8") as source_file:
+                lines = source_file.readlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            return f"文件读取失败: {exc}"
+        if target_line < 1 or target_line > len(lines):
+            return "目标行号超出文件范围"
+
+        def depth_delta(text):
+            # This deliberately only counts braces.  Comments and strings may
+            # contain braces, but the enclosing declaration boundary remains a
+            # useful conservative context for a static validation prompt.
+            return text.count("{") - text.count("}")
+
+        start = target_line - 1
+        while start >= 0:
+            text = lines[start]
+            if "{" in text and (
+                "function" in text or "=>" in text or
+                "(" in text or "class " in text or "constructor" in text
+            ):
+                break
+            start -= 1
+        if start < 0:
+            start = max(0, target_line - 6)
+
+        depth = 0
+        opened = False
+        end = start
+        for index in range(start, len(lines)):
+            depth += depth_delta(lines[index])
+            if "{" in lines[index]:
+                opened = True
+            if opened and depth <= 0:
+                end = index + 1
+                break
+        else:
+            end = min(len(lines), target_line + 5)
+        return "".join(lines[start:end])
 
     def extract_context_content(self, extracted_results, project_name):
         if not extracted_results:

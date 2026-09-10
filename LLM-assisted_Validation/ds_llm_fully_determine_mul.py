@@ -51,13 +51,27 @@ class FullyDeterminer:
 """
         if language.lower() in {"typescript", "javascript", "ts", "js"}:
             self.system_prompt = """
-You are the final exploit-chain stage of a static security audit. Do not run
-code. Analyze whether the reported attacker-controlled data flow reaches a
-security-sensitive sink and constitutes a valid vulnerability. Preserve the
-original TaintP2X result contract.
-Return JSON only with fields: issue_number, is_vulnerability (boolean), reason,
-and triggering_conditions. The reason must cite evidence from the reported
-path; triggering_conditions should describe how the path can be reached.
+You are a software security expert analysing taint propagation in a TypeScript
+or JavaScript project. Perform a static audit only; never execute the project.
+The source is an LLM conversational response and the reported path ends at a
+security-sensitive sink. Determine whether the taint remains effective through
+assignments, object/array transfers, calls, and sanitizers and reaches the sink
+in a way that constitutes a vulnerability.
+
+Use the same source, sink, and propagation semantics as the original TaintP2X
+analysis: user-controlled input or model output may reach code execution,
+database, filesystem, network-request, response, logging, template, or
+deserialization sinks. A data-flow match alone is insufficient; inspect the
+actual operation, validation, encoding, parameter position, and whether the
+tainted value can affect the security-sensitive behavior.
+
+Return JSON only with exactly these fields:
+{
+  "issue_number": <number>,
+  "is_vulnerability": <boolean>,
+  "reason": <evidence-based explanation>,
+  "triggering_conditions": <conditions required to reach and exploit the sink>
+}
 """
 
     def analyze_codeql_finding(self, finding, context, source_decision, issue_number):
@@ -120,7 +134,19 @@ path; triggering_conditions should describe how the path can be reached.
                 os.makedirs(issue_dir)
             
             trace_chain = self._extract_trace_chain(issue_data)
-            self._interact_with_llm(issue_num, trace_chain, project_name, issue_dir)
+            trace_log = os.path.join(issue_dir, "trace_chain.log")
+            self._write_trace_chain_log(issue_num, trace_chain, trace_log)
+            for call in trace_chain:
+                file_path = call.get("file_path")
+                if file_path:
+                    resolved = self._resolve_project_path(project_name, file_path)
+                    if resolved:
+                        call["content"] = self.extract_method_by_line(
+                            resolved, call.get("start_line", call.get("line", 1)),
+                            language=self.language,
+                        )
+                call.setdefault("content", "函数实现不可见或文件不存在")
+            self.analyze_trace_with_deepseek(trace_chain, trace_log, project_name)
 
     def _get_vulnerable_issues(self, project_name, source_log_dir):
         vulnerable_issues = []
@@ -138,14 +164,53 @@ path; triggering_conditions should describe how the path can be reached.
         return sorted(vulnerable_issues)
 
     def _extract_trace_chain(self, issue_data):
+        data = issue_data.get("data", {})
         chain = []
-        try:
-            # 简化版 Trace 提取
-            chain.append(f"Callable: {issue_data.get('data', {}).get('callable')}")
-            # 可以扩展更详细的 trace 提取
-        except Exception as e:
-            chain.append(f"Error extracting trace: {e}")
-        return "\n".join(chain)
+        # The adapter keeps CodeQL's ordered path in codeql_path.  Older Pysa
+        # artifacts are still accepted through their forward/backward roots.
+        for item in data.get("codeql_path", []):
+            chain.append(dict(item))
+        if chain:
+            return chain
+        for trace in data.get("traces", []):
+            for root in trace.get("roots", []):
+                location = root.get("location") or root.get("origin")
+                if not location:
+                    continue
+                chain.append({
+                    "function": root.get("call", {}).get("resolves_to", [""])[0],
+                    "file_path": location.get("filename", ""),
+                    "line": location.get("line", 1),
+                    "start_line": location.get("line", 1),
+                    "params": root.get("call", {}).get("port", ""),
+                })
+        if not chain:
+            chain.append({
+                "function": data.get("callable", "unknown"),
+                "file_path": data.get("filename", ""),
+                "line": data.get("line", 1),
+                "start_line": data.get("line", 1),
+                "params": "",
+            })
+        return chain
+
+    @staticmethod
+    def _write_trace_chain_log(issue_number, trace_chain, output_file):
+        with open(output_file, "w", encoding="utf-8") as handle:
+            handle.write(f"Issue {issue_number}\n")
+            for call in trace_chain:
+                handle.write(json.dumps(call, ensure_ascii=False) + "\n")
+
+    def _resolve_project_path(self, project_name, file_path):
+        clean = str(file_path).lstrip("/")
+        candidates = [
+            os.path.join(self.project_base_path, project_name, clean),
+            os.path.join(self.project_base_path, clean),
+        ]
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+        return None
 
     def _interact_with_llm(self, issue_number, context, project_name, issue_dir):
         response_file = os.path.join(issue_dir, "response_output.json")
@@ -182,8 +247,11 @@ path; triggering_conditions should describe how the path can be reached.
                 project_names.append(item)
         return project_names
 
-    def extract_method_by_line(self, file_path: str, target_line: int) -> str:
+    def extract_method_by_line(self, file_path: str, target_line: int, language=None) -> str:
         """根据指定行号提取整个方法内容"""
+        language = language or self.language
+        if language.lower() in {"typescript", "javascript", "ts", "js"}:
+            return self._extract_typescript_function(file_path, target_line)
         try:
             with open(file_path, 'r') as file:
                 lines = file.readlines()
@@ -248,6 +316,39 @@ path; triggering_conditions should describe how the path can be reached.
             return "文件不存在"
         except Exception as e:
             return f"提取方法时出错：{str(e)}"
+
+    @staticmethod
+    def _extract_typescript_function(file_path: str, target_line: int) -> str:
+        try:
+            with open(file_path, "r", encoding="utf-8") as source_file:
+                lines = source_file.readlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            return f"文件读取失败: {exc}"
+        if target_line < 1 or target_line > len(lines):
+            return "目标行号超出文件范围"
+        start = target_line - 1
+        while start >= 0:
+            line = lines[start]
+            if "{" in line and (
+                "function" in line or "=>" in line or "(" in line or
+                "class " in line or "constructor" in line
+            ):
+                break
+            start -= 1
+        if start < 0:
+            start = max(0, target_line - 6)
+        depth = 0
+        opened = False
+        end = start + 1
+        for index in range(start, len(lines)):
+            depth += lines[index].count("{") - lines[index].count("}")
+            opened = opened or "{" in lines[index]
+            if opened and depth <= 0:
+                end = index + 1
+                break
+        else:
+            end = min(len(lines), target_line + 5)
+        return "".join(lines[start:end])
 
     def extract_vulnerable_issues(self, project_name):
         # 获取所有 issue 的文件夹
@@ -331,6 +432,33 @@ path; triggering_conditions should describe how the path can be reached.
         """
         results = []
 
+        if self.language.lower() in {"typescript", "javascript", "ts", "js"}:
+            declaration = re.compile(
+                rf"(?:function\s+{re.escape(function_name)}\s*\(|"
+                rf"(?:async\s+)?{re.escape(function_name)}\s*\([^)]*\)\s*=>|"
+                rf"(?:async\s+)?{re.escape(function_name)}\s*\([^)]*\)\s*\{{)"
+            )
+            for root, _, files in os.walk(project_path):
+                for file in files:
+                    if not file.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")):
+                        continue
+                    file_path = os.path.join(root, file)
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as source_file:
+                            text = source_file.read()
+                        match = declaration.search(text)
+                        if not match:
+                            continue
+                        line = text.count("\n", 0, match.start()) + 1
+                        results.append({
+                            "file_path": file_path,
+                            "content": self.extract_method_by_line(file_path, line, language=self.language),
+                            "line_number": line,
+                        })
+                    except (OSError, UnicodeDecodeError) as exc:
+                        print(f"读取文件 {file_path} 时出错: {exc}")
+            return results
+
         for root, _, files in os.walk(project_path):
             for file in files:
                 if not file.endswith('.py'):
@@ -380,12 +508,15 @@ path; triggering_conditions should describe how the path can be reached.
         """
         # 收集所有提到的过滤函数，但排除已经在调用链中的函数
         sanitizer_functions = set()
-        existing_functions = {self.get_pure_function_name(call['function']) for call in trace_chain}
+        existing_functions = {
+            self.get_pure_function_name(call.get('function', '')) for call in trace_chain
+        }
 
         for result in analysis_results:
-            if result['analysis'].get('has_sanitizer') and result['analysis'].get('sanitizer_functions'):
+            analysis = result.get('analysis', result)
+            if analysis.get('has_sanitizer') and analysis.get('sanitizer_functions'):
                 sanitizer_functions.update(
-                    func for func in result['analysis']['sanitizer_functions'] 
+                    func for func in analysis['sanitizer_functions']
                     if func not in existing_functions
                 )
 
@@ -497,9 +628,35 @@ path; triggering_conditions should describe how the path can be reached.
 4. 检查是否存在对请求返回内容的处理，以判断是否可能导致信息泄露或进一步的攻击。
 """
         }
+        if self.language.lower() in {"typescript", "javascript", "ts", "js"}:
+            type_specific_prompts = {
+                "Code_Execution": """
+Pay particular attention to command construction, eval-like execution, shell
+interpretation, argument validation, and whether the tainted value can change
+which command or code is executed.
+""",
+                "SQL_Injection": """
+Check parameterized queries, string construction, escaping, and whether the
+tainted value can change the SQL statement rather than only a bound value.
+""",
+                "File_Operation": """
+Check path normalization, directory restrictions, and path traversal. For a
+write, determine whether the attacker controls both path and content; for a
+read, determine whether the path reaches arbitrary-file access.
+""",
+                "XSS": """
+Check HTML encoding, the template/output context, and filtering of model output.
+""",
+                "SSRF": """
+Check whether the destination is attacker-controlled, whether internal
+resources can be reached, and whether allowlists, redirects, special schemes,
+or DNS rebinding can be bypassed.
+""",
+            }
 
         # 在函数开始处添加已分析函数集合
         analyzed_functions = set()
+        is_ts = self.language.lower() in {"typescript", "javascript", "ts", "js"}
 
         for i, call in enumerate(trace_chain, 1):
             # 只使用函数实现内容作为唯一标识
@@ -514,11 +671,15 @@ path; triggering_conditions should describe how the path can be reached.
             analyzed_functions.add(func_content)
 
             # 构建基础提示信息
-            base_prompt = f"""请分析以下调用链中的片段里的污点传播是否有效，请注意，污点源是由用户可控的大模型输出，
+            base_prompt = (f"""Analyze whether taint propagation in this call-chain fragment is effective. The taint source is a user-controlled LLM output.
+Determine whether each operation preserves or sanitizes the taint and whether
+the value can trigger the security-sensitive sink. Analyze only the supplied
+fragment.
+""" if self.language.lower() in {"typescript", "javascript", "ts", "js"} else f"""请分析以下调用链中的片段里的污点传播是否有效，请注意，污点源是由用户可控的大模型输出，
 在污点传播到sink函数的过程中，可能有过滤函数对污点进行消毒，对于这种过滤函数请你仔细判断污点是否能被消毒成功。
 对于污点流，你要分析流入sink函数的污点是否是source的大模型输出可控的，并且还要考虑污点是否有能力触发sink函数导致的漏洞。
 注意只需要具体分析片段中的内容。
-"""
+""")
 
             # 添加漏洞类型特定的提示
             if vuln_type and isinstance(vuln_type, list):
@@ -527,7 +688,42 @@ path; triggering_conditions should describe how the path can be reached.
                         base_prompt += "\n" + type_specific_prompts[vtype]
 
             # 完整提示信息
-            prompt = base_prompt + f"""
+            if is_ts:
+                prompt = base_prompt + f"""
+
+Analyse these points:
+1. the purpose of each function and operation on the path
+2. how each function handles and transfers the tainted value
+3. the call relationship and data-flow transition
+4. whether validation or sanitization is effective
+
+Complete call-chain record:
+{output_log_content}
+
+Call-chain fragment:
+Function: {call.get('function', 'unknown')}
+Parameters: {call.get('params', '')}
+Implementation:
+{call.get('content', 'implementation unavailable')}
+
+Return JSON only:
+{{
+    "issue_number": <call-chain number>,
+    "is_taint_valid": true/false,
+    "has_sanitizer": true/false,
+    "sanitizer_functions": [<sanitizer names>],
+    "function_analysis": [
+        {{
+            "function_name": <function name>,
+            "purpose": <purpose and behavior>,
+            "taint_handling": <taint handling>
+        }}
+    ],
+    "analysis_reason": <evidence-based reason>
+}}
+"""
+            else:
+                prompt = base_prompt + f"""
 
 请详细分析以下几点：
 1. 污点经过的每个函数的具体功能和调用意图
@@ -539,11 +735,10 @@ path; triggering_conditions should describe how the path can be reached.
 {output_log_content}
 
 具体调用链片段：
-
-函数名: {call['function']}
-参数信息: {call['params']}
+函数名: {call.get('function', 'unknown')}
+参数信息: {call.get('params', '')}
 函数实现:
-{call['content'] if 'content' in call else '函数实现不可见'}
+{call.get('content', '函数实现不可见')}
 
 请以JSON格式返回分析结果：
 {{
@@ -620,6 +815,22 @@ path; triggering_conditions should describe how the path can be reached.
                 print(f"调用DeepSeek API时出错: {str(e)}")
                 analysis_results.append({"error": f"DeepSeek API call error: {str(e)}", **call})
 
+        # The original implementation performs one final whole-chain
+        # judgement after the per-function checks.  Keep that second LLM call
+        # explicit so CodeQL only replaces the static path provider.
+        chain_prompt = f"""{self.system_prompt}
+Review the complete taint path below after considering the per-function
+analysis. Decide whether the reported flow is a real vulnerability. Do not
+invent missing evidence and do not execute code.
+
+Complete path:
+{output_log_content}
+
+Per-function analysis:
+{json.dumps(analysis_results, ensure_ascii=False, indent=2)}
+
+Return JSON only with issue_number, is_vulnerability (boolean), reason, and
+triggering_conditions."""
         try:
             final_response = self.llm_client.chat_completion(
                 messages=[
@@ -640,33 +851,20 @@ path; triggering_conditions should describe how the path can be reached.
                 except json.JSONDecodeError as je:
                     print(f"JSON解析错误，原始内容：\n{json_content}")
                     print(f"错误详情：{str(je)}")
-                    final_analysis = {
-                        "issue_number": os.path.basename(os.path.dirname(log_file)),
-                        "is_vulnerability": False,
-                        "reason": "JSON解析错误，无法完成分析",
-                        "triggering_conditions": "无法确定",
-                        "poc": "无法生成"
-                    }
+                    return None
             else:
                 print("Warning: Unexpected LLM response structure or empty choices for final analysis.")
-                final_analysis = {
-                    "issue_number": os.path.basename(os.path.dirname(log_file)),
-                    "is_vulnerability": False,
-                    "reason": "LLM响应结构异常，无法完成分析",
-                    "triggering_conditions": "无法确定",
-                    "poc": "无法生成"
-                }
-                sys.exit(1)  # JSON解析错误也直接退出
+                return None
 
         except Exception as e:
             print(f"调用 DeepSeek 进行综合分析时出错: {str(e)}")
-            final_analysis = {
-                "issue_number": os.path.basename(os.path.dirname(log_file)),
-                "is_vulnerability": False,
-                "reason": f"DeepSeek API调用错误: {str(e)}",
-                "triggering_conditions": "无法确定",
-                "poc": "无法生成"
-            }
+            return None
+
+        if not isinstance(final_analysis, dict) or not isinstance(
+            final_analysis.get("is_vulnerability"), bool
+        ):
+            print("最终 LLM 响应缺少有效的 is_vulnerability 字段")
+            return None
 
         # 构建输出JSON
         output_json = {
