@@ -1,5 +1,4 @@
 import json
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,35 +43,18 @@ class CodeQLSourceGenerationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             analysis_path = root / "analysis.json"
-            records_path = root / "sources.json"
-            qll_path = root / "Models.qll"
+            qll_path = root / "TaintP2XProjectSources.qll"
             analysis_path.write_text(json.dumps(confirmed), encoding="utf-8")
 
             extract_and_format_llm_paths(
-                str(analysis_path), str(records_path), backend="codeql"
-            )
-            records = json.loads(records_path.read_text(encoding="utf-8"))
-            subprocess.run(
-                [
-                    "python",
-                    str(REPOSITORY_ROOT / "scripts" / "generate_codeql_models.py"),
-                    str(REPOSITORY_ROOT / "CodeQL_Models" / "taintp2x_models.json"),
-                    str(qll_path),
-                    "--source-records",
-                    str(records_path),
-                ],
-                check=True,
+                str(analysis_path), str(qll_path), backend="codeql"
             )
             generated = qll_path.read_text(encoding="utf-8")
 
-        self.assertEqual("src/first.ts", records["sources"][0]["module"])
-        self.assertEqual("Agent", records["sources"][0]["class"])
-        self.assertEqual(10, records["sources"][0]["start_line"])
-        self.assertEqual(20, records["sources"][0]["end_line"])
         self.assertIn('function.getFile().getRelativePath() = "src/first.ts"', generated)
         self.assertIn('function.getFile().getRelativePath() = "src/second.ts"', generated)
         self.assertIn("call.getACallee() = function", generated)
-        self.assertNotIn('call.getCalleeName() in ["create"]', generated)
+        self.assertNotIn("getCalleeName", generated)
 
 
 if __name__ == "__main__":

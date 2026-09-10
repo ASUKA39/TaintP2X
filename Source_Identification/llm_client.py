@@ -62,17 +62,14 @@ class LLMClient:
         full_prompt = prompt.format(method_code=method_code)
         return self.complete(full_prompt)
 
-    def complete(self, prompt: str) -> Dict:
-        """Send an arbitrary JSON-oriented prompt to the configured model."""
-        
+    def _request(self, messages, model=None, **kwargs) -> Dict:
+        """Send the caller's messages and protocol options without rewriting them."""
         try:
             payload = {
-                "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0,
-                "max_tokens": 1024,
-                "response_format": {"type": "json_object"}
+                "model": model or self.model,
+                "messages": messages,
             }
+            payload.update({key: value for key, value in kwargs.items() if value is not None})
             payload.update(self.extra_body)
 
             headers = {
@@ -89,18 +86,15 @@ class LLMClient:
         except Exception as e:
             return {"error": f"Unexpected error: {e}", "analysis": None}
 
+    def complete(self, prompt: str) -> Dict:
+        """Send a single user prompt using the configured JSON response defaults."""
+        return self._request(
+            [{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=1024,
+            response_format={"type": "json_object"},
+        )
+
     def chat_completion(self, model=None, messages=None, **kwargs) -> Dict:
-        """Compatibility API for the original validation modules."""
-        if model:
-            original_model = self.model
-            self.model = model
-        try:
-            prompt = "\n\n".join(
-                message.get("content", "")
-                for message in (messages or [])
-                if message.get("content")
-            )
-            return self.complete(prompt)
-        finally:
-            if model:
-                self.model = original_model
+        """Compatibility API preserving message roles/order and protocol options."""
+        return self._request(messages or [], model=model, **kwargs)
