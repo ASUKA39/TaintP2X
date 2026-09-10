@@ -818,6 +818,9 @@ Return JSON only:
         # The original implementation performs one final whole-chain
         # judgement after the per-function checks.  Keep that second LLM call
         # explicit so CodeQL only replaces the static path provider.
+        sanitizer_implementations = self.get_sanitizer_implementations(
+            analysis_results, trace_chain, project_name
+        )
         chain_prompt = f"""{self.system_prompt}
 Review the complete taint path below after considering the per-function
 analysis. Decide whether the reported flow is a real vulnerability. Do not
@@ -828,6 +831,9 @@ Complete path:
 
 Per-function analysis:
 {json.dumps(analysis_results, ensure_ascii=False, indent=2)}
+
+Additional sanitizer implementations:
+{json.dumps(sanitizer_implementations, ensure_ascii=False, indent=2)}
 
 Return JSON only with issue_number, is_vulnerability (boolean), reason, and
 triggering_conditions."""

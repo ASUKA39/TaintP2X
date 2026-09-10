@@ -45,3 +45,5 @@
   verified Python compilation, unit tests, and whitespace checks.
 - Added an offline end-to-end regression for the Source gate and Fully stage,
   asserting that the original trace and analysis artifacts are produced.
+- Restored the original sanitizer-implementation supplement into the final
+  whole-chain prompt instead of silently dropping it during CodeQL adaptation.
