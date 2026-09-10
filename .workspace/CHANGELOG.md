@@ -47,3 +47,8 @@
   asserting that the original trace and analysis artifacts are produced.
 - Restored the original sanitizer-implementation supplement into the final
   whole-chain prompt instead of silently dropping it during CodeQL adaptation.
+- Rebuilt `taintp2x:typescript` and reran the Flowise example from the mounted
+  workspace: all 28 generated CodeQL rules compiled and executed, the database
+  was created successfully, and the run produced zero CodeQL findings and zero
+  issue-level validation artifacts. This confirms the end-to-end execution
+  path; the selected Flowise run does not itself require a finding.

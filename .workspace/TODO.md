@@ -11,6 +11,6 @@
 - [x] Make LLM transport transparent and remove hardcoded model names.
 - [x] Remove independent validation/CLI paths and consolidate configuration naming.
 - [x] Add focused regression fixtures for each migrated semantic boundary.
-- [ ] Rebuild the TypeScript image and reproduce the Flowise example from a clean workspace.
+- [x] Rebuild the TypeScript image and reproduce the Flowise example from a clean workspace.
 - [x] Reconcile `REPRODUCTION_GUIDE.md`, checklist, and compliance audit with verified behavior.
 - [x] Remove embedded provider/model configuration from legacy LLM helper code.
