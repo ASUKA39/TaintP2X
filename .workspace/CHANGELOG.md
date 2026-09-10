@@ -36,3 +36,6 @@
 - Removed the independent SARIF Markdown validator and renamed the TypeScript reproduction configuration to `config.json`.
 - Updated `REPRODUCTION_GUIDE.md` to describe the rule-directory driver, SARIF compatibility artifact, and original Source/Fully validation stages; removed stale validator commands and old unified-query claims.
 - Removed the dead heuristic CodeQL model generator and the remaining attack-entry-point/`Not-Sure` CodeQL validator fallback. TypeScript Source validation now uses the original `is_vulnerability` contract only.
+- Reconciled the compliance audit and reproduction guide with the current
+  implementation, including the actual zero-finding Flowise CodeQL run and
+  the absence of issue-level validation artifacts when no path is reported.

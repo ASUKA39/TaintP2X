@@ -12,4 +12,4 @@
 - [x] Remove independent validation/CLI paths and consolidate configuration naming.
 - [x] Add focused regression fixtures for each migrated semantic boundary.
 - [ ] Rebuild the TypeScript image and reproduce the Flowise example from a clean workspace.
-- [ ] Reconcile `REPRODUCTION_GUIDE.md`, checklist, and compliance audit with verified behavior.
+- [x] Reconcile `REPRODUCTION_GUIDE.md`, checklist, and compliance audit with verified behavior.

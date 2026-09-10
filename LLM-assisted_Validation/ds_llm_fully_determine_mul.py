@@ -832,11 +832,16 @@ Per-function analysis:
 Return JSON only with issue_number, is_vulnerability (boolean), reason, and
 triggering_conditions."""
         try:
+            final_instruction = (
+                " Return JSON only; do not include Markdown or other text."
+                if is_ts else
+                "\n请务必以严格的JSON格式返回结果，不要包含任何其他文本或Markdown标记。确保JSON格式正确且可解析。"
+            )
             final_response = self.llm_client.chat_completion(
                 messages=[
                     {
                         "role": "user", 
-                        "content": chain_prompt + "\n请务必以严格的JSON格式返回结果，不要包含任何其他文本或Markdown标记。确保JSON格式正确且可解析。"
+                        "content": chain_prompt + final_instruction
                     }
                 ],
                 temperature=0,

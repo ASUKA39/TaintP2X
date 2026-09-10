@@ -1,4 +1,4 @@
-# TaintP2X Python Baseline Reproduction
+# TaintP2X Reproduction Guide
 
 ## 前置条件
 
@@ -245,7 +245,7 @@ jq '{count:(.runs[0].results|length), results:[.runs[0].results[]|{ruleId,messag
 
 CodeQL 只替换 Pysa 的静态污点后端；`scripts/run_typescript_codeql.py` 将 SARIF 路径适配为原版 `taint-output.json`，随后调用 `SourceDeterminer` 和 `FullyDeterminer`。两阶段继续写入原版 issue 目录及 `response_output.json`、`analysis_results.json` 等 artifact。该阶段是静态审计，不运行目标代码；模型调用失败的条目不写入伪造结果。
 
-本次 Flowise 测试对包含 `RemoteCodeExecution` 的告警实际执行后验证，单条报告保存在 `.workspace/codeql-validation/flowise-retest.md`。随后去掉 `--contains` 对全部 72 条告警完成后验证，报告为 `.workspace/codeql-validation/flowise-retest-all.md`，成功后验证 72/72；报告按原版契约记录每条路径的 `is_vulnerability`、原因和触发条件。
+本次 Flowise 运行完成了 CodeQL 数据库创建、28 条规则求解和 SARIF 适配；该数据库未产生可供后验证的 CodeQL finding，因此没有生成 issue 级 LLM 验证结果。若后续运行产生 finding，原版验证器会在 `llm_validation_logs/<TARGET_NAME>/<ISSUE>/` 下写入 `issue_data.json`、`file_paths_and_lines.json`、`context_output.txt`、`response_output.json`、`trace_chain.log` 和 `analysis_results.json`。模型调用失败时不写入伪造的最终判断。
 
 ### TypeScript 清理
 

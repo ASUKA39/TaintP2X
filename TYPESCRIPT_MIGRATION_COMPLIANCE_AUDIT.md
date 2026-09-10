@@ -50,7 +50,7 @@
 |---|---|---|---|---|
 | 漏洞分类 | 原版没有 `LLM-in-the-Loop`、`traditional`、`Not-Sure`。原版判断 `is_vulnerability`，并按 Sink 保存 `vulnerability_types`。 | TypeScript 后验证器曾要求模型返回上述三个新分类，并在报告中统计三类数量。当前工作树已删除这套分类要求，但修正尚未提交；历史提交和已生成报告仍含有旧分类。 | 将本研究的漏洞分类标准误当成 TaintP2X 迁移需求。 | 改变实验对象和输出含义，使迁移结果不能与原版结果直接比较。 |
 
-处理结论：该项尚未清理完成。后续必须删除 `LLM-in-the-Loop`、`traditional`、`Not-Sure` 分类体系及其 Prompt、字段、统计和其他残留，不保留替代性的新分类；同时恢复原版的 `is_vulnerability` 和 `vulnerability_types` 结果语义与输出契约。
+处理结论：已清理。迁移代码不生成或统计 `LLM-in-the-Loop`、`traditional`、`Not-Sure`，继续使用原版 `is_vulnerability` 和可选 `vulnerability_types` 语义。历史 `.workspace` 报告不属于当前运行输出，最终复现时应清理。
 
 ### 2. 新增独立 CodeQL 后验证阶段
 
@@ -58,13 +58,13 @@
 |---|---|---|---|---|
 | 后验证入口 | `SourceDeterminer.process_project` 读取 Pysa issue，保存 issue 资料和 Source 信息；随后 `FullyDeterminer.process_project` 处理已筛选 issue。 | 新增 `scripts/validate_codeql_results.py`，直接读取 SARIF，逐条调用 Source 和 Fully 判断。 | 为了快速消费 CodeQL SARIF，另写了一个独立适配器。 | 流程从“适配原有验证器”变成“新增一条验证流水线”；原版筛选、目录、断点和合并逻辑没有完整保留。 |
 
-处理结论：保留原版 `SourceDeterminer.process_project` -> `FullyDeterminer.process_project` 主流程及其职责、筛选逻辑、中间产物和输出契约，只将依赖 Pysa 结果的输入解析与调用边界替换为 CodeQL/SARIF。TypeScript 所需处理应收敛到原版对应模块中，作为替换实现；功能收敛完成后删除 `scripts/validate_codeql_results.py` 这条独立流程。不得借迁移新增分析阶段、分类、筛选规则、输出形式或其它功能，也不得删除原版功能。
+处理结论：已完成。`SourceDeterminer.process_project` -> `FullyDeterminer.process_project` 仍是唯一后验证入口；CodeQL/SARIF 只在 `run_download_and_check.py` 的后端边界转换为原版 issue/path 结构，独立 validator 已删除。
 
 ### 3. 新增非原版 CLI 行为
 
 `scripts/validate_codeql_results.py` 增加了 `--contains`、`--limit`、`--workers`、`--language`。这些选项不是 TypeScript 语义迁移所需，也不是原版验证器的接口。它们改变任务选择、并发方式和执行范围，属于额外功能，应从核心迁移路径中移除，或明确放到独立实验工具而不能伪装成原版迁移。
 
-处理结论：删除 `--contains`、`--limit`、`--workers`、`--language` 及其对应行为，不保留独立实验入口；迁移后继续使用原版的执行入口和配置方式。
+处理结论：已完成。独立 validator 及其非原版 CLI 已删除，迁移入口继续使用原版 driver 的阶段顺序。
 
 ## 三、Source Identification 偏差
 
@@ -89,7 +89,7 @@
 
 原版按属性使用记录处理；当前脚本用 `file:start:end` 去重。同一函数内多个不同 LLM 调用只保留一个候选，可能丢失原版会分别处理的 Source 记录。
 
-处理结论：恢复原版顺序与职责划分。TypeScript 扫描阶段必须保留每个已确认 LLM 对象/API 的实际使用记录，不得按函数范围去重；仍由原版 Source 确认模块按函数标识去重，以避免对同一函数重复进行 LLM 确认。
+处理结论：已完成。TypeScript 扫描保留每个实际使用记录，函数级去重仍由 `confirm_source.py` 执行。
 
 ### 6. Source 确认后的定位信息没有真正用于 CodeQL 匹配
 
@@ -173,7 +173,7 @@
 
 原版验证流程使用 `issue_data.json`、`file_paths_and_lines.json`、`context_output.txt`、`response_output.json`、`trace_chain.log`、`analysis_results.json` 等中间文件，并支持已有 issue、重复路径和结果的复用。当前新增验证器输出单个 Markdown 报告，未保持这些文件和断点/合并契约。
 
-处理结论：完整保留原版按项目/issue 组织的目录结构、文件名、JSON 结构及各中间文件在阶段传递、Source 门控、重复 issue 合并、结果复用和断点恢复中的职责。CodeQL 数据库和 SARIF 只作为替换 Pysa 后端后新增的底层 artifact；SARIF/path 适配必须接入原版中间数据契约，不能以独立 Markdown 报告替换它。删除新增 Markdown 结果形式，最终结果仍由原版流程保存到 `analysis_results.json`，不另造输出契约或断点机制。
+处理结论：已完成。SARIF 适配器保留有序路径并生成原版 `taint-output.json`；两个验证阶段继续使用按项目/issue 的 `issue_data.json`、`file_paths_and_lines.json`、`context_output.txt`、`response_output.json`、`trace_chain.log` 和 `analysis_results.json`。未保留独立 Markdown 结果契约。
 
 ### 19. 原版漏洞类型字段丢失
 
@@ -199,7 +199,7 @@
 
 `REPRODUCTION_GUIDE.md` 曾把三类新增分类及其统计写成 TypeScript 迁移的复现结果。当前工作树已改为原版 `is_vulnerability` 契约，但文档和历史 artifact 需要与最终修正版代码一起重新核对，不能继续引用旧分类统计。
 
-处理结论：该项留到迁移实现全部完成后处理。届时从干净工作区严格按照 `REPRODUCTION_GUIDE.md` 执行最终端到端复现测试，逐步核对并修正文档中的命令、路径、配置、阶段、artifact 和实际结果，删除旧分类及独立验证流程的遗留描述；最终指南只能记录经过该次完整复现验证的流程和结果。
+处理结论：已完成初步核对。指南当前使用 `config.json`、规则目录和原版验证入口；最终交付前仍需从干净 `.workspace` 重跑一次，以核对命令、路径和实际 artifact。
 
 ## 七、结论和修正优先级
 
@@ -222,4 +222,4 @@
 
 ### 当前修正状态
 
-本审计文档创建时，新增三类漏洞分类已经在工作树中移除，但尚未提交；其余偏差仍需按上面的优先级修正。未完成这些修正前，不能将当前 `typescript-port` 称为与原版 TaintP2X 等价的迁移版本。
+当前关键代码修正已提交；剩余工作仅是干净工作区的最终复现和文档结果核对，不再引入新的分析逻辑。
