@@ -52,9 +52,44 @@ def run_codeql_check(folder, config):
     try:
         with open(output, "r", encoding="utf-8") as result_file:
             sarif = json.load(result_file)
+        _write_codeql_issue_artifact(folder, sarif)
         return bool(sarif.get("runs", [{}])[0].get("results", []))
     except (OSError, json.JSONDecodeError):
         return False
+
+
+def _write_codeql_issue_artifact(folder, sarif):
+    """Adapt SARIF paths to the original validators' taint-output contract."""
+    issues = []
+    for result in sarif.get("runs", [{}])[0].get("results", []):
+        locations = []
+        for flow in result.get("codeFlows", []):
+            for thread in flow.get("threadFlows", []):
+                locations.extend(thread.get("locations", []))
+        if not locations:
+            locations = [{"location": result.get("locations", [{}])[0]}]
+        def location(item):
+            physical = item.get("location", {}).get("physicalLocation", {})
+            artifact = physical.get("artifactLocation", {}).get("uri", "")
+            region = physical.get("region", {})
+            return {"filename": artifact.lstrip("/"), "line": region.get("startLine", 1)}
+        source = location(locations[0])
+        sink = location(locations[-1])
+        issues.append({
+            "kind": "issue",
+            "data": {
+                "callable": sink["filename"],
+                "traces": [{"name": "source", "roots": [{"location": source}]}],
+                "sink": sink,
+                "rule_code": result.get("ruleId", ""),
+                "message": result.get("message", {}).get("text", ""),
+            },
+        })
+    artifact_dir = os.path.join(folder, "codeql-runs_" + os.path.basename(folder))
+    os.makedirs(artifact_dir, exist_ok=True)
+    with open(os.path.join(artifact_dir, "taint-output.json"), "w", encoding="utf-8") as handle:
+        json.dump(issues, handle, indent=2)
+    return os.path.join(artifact_dir, "taint-output.json")
 
 
 def run_pysa_check(folder, backend="pysa", config=None):
@@ -217,29 +252,20 @@ def process_github_repo(repo, download_dir, max_retries=3, language="python", ba
             if has_issue:
                 if backend.lower() == "codeql":
                     try:
-                        project_root = os.path.abspath((config or {}).get("project_root", "."))
-                        sarif_file = os.path.join(
-                            project_root,
-                            (config or {}).get(
-                                "codeql_output",
-                                ".workspace/codeql-results/" + os.path.basename(
-                                    (config or {}).get("codeql_database", unique_dir_name)
-                                ) + ".sarif",
-                            ),
+                        import sys
+                        llm_val_dir = os.path.abspath("LLM-assisted_Validation")
+                        if llm_val_dir not in sys.path:
+                            sys.path.append(llm_val_dir)
+                        from ds_llm_source_determine_mul import SourceDeterminer
+                        from ds_llm_fully_determine_mul import FullyDeterminer
+                        taint_output_file = os.path.join(
+                            target_dir, "codeql-runs_" + unique_dir_name, "taint-output.json"
                         )
-                        report_file = os.path.join(
-                            project_root,
-                            ".workspace/codeql-validation",
-                            unique_dir_name + ".md",
-                        )
-                        subprocess.run([
-                            "python",
-                            os.path.join(project_root, "scripts", "validate_codeql_results.py"),
-                            "--sarif", sarif_file,
-                            "--source-root", target_dir,
-                            "--output", report_file,
-                            "--language", language,
-                        ], check=True)
+                        log_dir = os.path.abspath("./llm_validation_logs")
+                        source_determiner = SourceDeterminer(os.path.abspath(download_dir), log_dir, language=language)
+                        fully_determiner = FullyDeterminer(os.path.abspath(download_dir), log_dir, language=language)
+                        source_determiner.process_project(unique_dir_name, taint_output_file)
+                        fully_determiner.process_project(unique_dir_name, taint_output_file, log_dir)
                     except Exception as e:
                         print(f"CodeQL LLM 验证出错: {e}")
                 else:

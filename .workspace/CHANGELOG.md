@@ -1,0 +1,22 @@
+# TypeScript Port Development Changelog
+
+## 2026-09-10
+
+- Established the corrective TDD worklist from `TYPESCRIPT_MIGRATION_COMPLIANCE_AUDIT.md` at commit `f8657e0`.
+- Confirmed the active branch is `typescript-port` and the tracked worktree is clean before corrective implementation.
+- Replaced package-presence, method-name, and keyword heuristics in TypeScript Source discovery with an exact SDK registry and TypeChecker-backed symbol/alias tracking.
+- Added regression fixtures for module and local clients, class fields, constructor parameter properties, aliases, destructuring, optional chaining, direct functions, re-exports, and registered client factories.
+- Preserved every concrete SDK use during scanning and restored function-level deduplication to the original `confirm_source.py` stage.
+- Verified the Source Identification tests in `taintp2x:typescript`; the Flowise checkout also completed a real scan with 53 exact client uses across 19 functions before the client-factory follow-up.
+- Changed the CodeQL branch of `make_pysa_source.py` to preserve confirmed file, class, function, range, and stable function identity instead of exporting a global method name.
+- Changed generated `LLMControlled` Sources to match calls whose resolved callee is the exact confirmed project function; removed the confirmed attribute-name merge.
+- Added a duplicate-name regression test and compiled the generated query with the pinned CodeQL 2.23.2 JavaScript pack.
+
+## 2026-09-11
+
+- Replaced the temporary unified CodeQL query with rule-specific query generation driven by the original `taint.config` rule table, preserving the 500x/600x rule identities and messages.
+- Added stateful CodeQL flow with the original `FileOperation` state boundary and restored the literal `FromUrlLLMControlled` URL source expression.
+- Removed global property-name Source/Sink fallbacks and retained only precise confirmed project Source calls plus official CodeQL security concepts and package-qualified models.
+- Made `LLMClient.chat_completion` preserve message roles/order and caller protocol parameters; removed hardcoded validation model names.
+- Verified Python regression tests, CodeQL compilation of all 28 generated rules, and CodeQL database evaluation on the Flowise database. The current Flowise run produced no findings because the checked-in Source confirmation artifact contains no confirmed CodeQL Source predicate for the current database run; SARIF-to-original-artifact integration remains pending.
+- Added a SARIF-to-`taint-output.json` compatibility adapter and routed CodeQL findings through the original `SourceDeterminer` and `FullyDeterminer` entry points instead of the independent Markdown validator. The adapter preserves issue numbering, source locations, rule ids, and the original stage gate.
