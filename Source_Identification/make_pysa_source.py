@@ -19,7 +19,7 @@ def _render_codeql_sources(entries):
             continue
         clauses.append(
             "    (\n"
-            f"      function.getFile().getRelativePath() = {_ql_string(module)} and\n"
+            f"      function.getFile().getRelativePath() = {_ql_string(module.lstrip('/'))} and\n"
             f"      function.getName() = {_ql_string(method)} and\n"
             f"      function.getLocation().getStartLine() = {start_line} and\n"
             f"      function.getLocation().getEndLine() = {end_line}\n"

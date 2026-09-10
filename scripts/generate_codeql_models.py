@@ -37,7 +37,7 @@ def confirmed_function_predicate(records: list[dict]) -> str:
             continue
         clauses.append(
             "("
-            f"function.getFile().getRelativePath() = {ql_string(module)} and "
+            f"function.getFile().getRelativePath() = {ql_string(module.lstrip('/'))} and "
             f"function.getName() = {ql_string(method)} and "
             f"function.getLocation().getStartLine() = {start_line} and "
             f"function.getLocation().getEndLine() = {end_line}"

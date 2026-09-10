@@ -48,8 +48,9 @@ module TaintP2XModels {
 
   class LLMControlledSource extends TaintP2XSource {
     LLMControlledSource() {
-      exists(DataFlow::CallNode call |
-        TaintP2XProjectSources::isConfirmedLLMCall(call) and this = call
+      exists(DataFlow::FunctionNode function |
+        TaintP2XProjectSources::isConfirmedLLMFunction(function.getFunction()) and
+        this = function.getAReturn()
       )
     }
 
