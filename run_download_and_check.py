@@ -30,7 +30,7 @@ def run_codeql_check(folder, config):
     ))
     query = os.path.join(root, config["codeql_query"])
     codeql_repo = os.path.join(root, config["codeql_repo"])
-    rules_manifest = os.path.join(root, config.get("models_manifest", "CodeQL_Models/taintp2x_models.json"))
+    rules_manifest = os.path.join(root, config.get("rules_manifest", "Taint_Propagation/taint/taint.config"))
     rules_generator = os.path.join(root, "scripts", "generate_codeql_rules.py")
     rules_dir = query if os.path.isdir(query) else os.path.dirname(query)
     if os.path.exists(rules_generator) and os.path.exists(rules_manifest):

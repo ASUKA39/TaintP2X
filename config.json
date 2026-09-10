@@ -7,6 +7,7 @@
   "codeql_database": ".workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2025-55346_2.2.6",
   "codeql_query": "CodeQL_Queries/rules",
   "models_manifest": "CodeQL_Models/taintp2x_models.json",
+  "rules_manifest": "Taint_Propagation/taint/taint.config",
   "generated_models": "CodeQL_Queries/TaintP2XModels.qll",
   "generated_sources": "CodeQL_Queries/TaintP2XProjectSources.qll",
   "codeql_cli": ".workspace/codeql-cli-2.23.2/codeql/codeql",

@@ -529,14 +529,6 @@ If the evidence is insufficient, use false and explain why.
                     # 这需要更复杂的解析逻辑，例如查找最后一个函数调用的模式
                     # 暂时简化为只要包含这些字符串就认为是无效
                     print(f"Issue {i} 的 output.log 中检测到无效函数位置，跳过分析。")
-                    default_response = {
-                        "issue_number": i,
-                        "is_vulnerability": False,
-                        "reason": "调用链最后一个函数位置无效，无法准确判断",
-                        "triggering_conditions": ""
-                    }
-                    with open(response_file, 'w') as f:
-                        json.dump(default_response, f, indent=2, ensure_ascii=False)
                     return
 
             # 检查 first_file_path 是否已经检查过
@@ -567,7 +559,7 @@ If the evidence is insufficient, use false and explain why.
 
                 if 'choices' not in response_data or not response_data['choices']:
                     print("DeepSeek API返回数据格式错误")
-                    sys.exit(1)
+                    return
 
                 # 去掉内容中的 Markdown 格式（```json```）和换行符
                 json_content = response_data['choices'][0]['message']['content']
@@ -585,7 +577,7 @@ If the evidence is insufficient, use false and explain why.
                     with open(response_file.replace(".json", "_raw.txt"), "w") as f_raw:
                         f_raw.write(str(response_data))
                     print(f"原始响应已保存到 {response_file.replace('.json', '_raw.txt')}")
-                sys.exit(1)
+                return
         except Exception as e:
                 print(f"处理 issue {issue_number} 时发生未知错误：{str(e)}")
 
@@ -627,4 +619,3 @@ If the evidence is insufficient, use false and explain why.
 
 #     # 检查并合并重复的 issues
 #     check_and_merge_duplicate_issues(project_name)
-
