@@ -243,7 +243,7 @@ jq '{count:(.runs[0].results|length), results:[.runs[0].results[]|{ruleId,messag
 
 ### TypeScript Step 8：LLM 后验证
 
-CodeQL 只负责计算通用污点路径；后验证由 `scripts/validate_codeql_results.py` 完成。它读取 SARIF 的每条告警及全部 `codeFlows`，从目标源码提取路径位置上下文，使用配置的 OpenAI-compatible 模型判断攻击者入口、利用链、Sanitizer 和 `LLM-in-the-Loop`/`traditional`/`Not-Sure` 分类。该阶段是静态审计，不运行目标代码；模型调用失败的条目直接跳过，不伪造分类。
+CodeQL 只负责计算通用污点路径；后验证由 `scripts/validate_codeql_results.py` 完成。它读取 SARIF 的每条告警及全部 `codeFlows`，从目标源码提取路径位置上下文，使用配置的 OpenAI-compatible 模型按原版 TaintP2X 结果契约判断污点路径是否构成漏洞，并返回 `is_vulnerability`、`reason` 和 `triggering_conditions`。该阶段是静态审计，不运行目标代码；模型调用失败的条目直接跳过。
 
 通用命令：
 
@@ -263,7 +263,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
     --workers 4'
 ```
 
-本次 Flowise 测试对包含 `RemoteCodeExecution` 的告警实际执行后验证，单条报告保存在 `.workspace/codeql-validation/flowise-retest.md`。随后去掉 `--contains` 对全部 72 条告警完成后验证，报告为 `.workspace/codeql-validation/flowise-retest-all.md`，成功后验证 72/72，其中 `LLM-in-the-Loop` 22 条、`traditional` 33 条、`Not-Sure` 17 条。
+本次 Flowise 测试对包含 `RemoteCodeExecution` 的告警实际执行后验证，单条报告保存在 `.workspace/codeql-validation/flowise-retest.md`。随后去掉 `--contains` 对全部 72 条告警完成后验证，报告为 `.workspace/codeql-validation/flowise-retest-all.md`，成功后验证 72/72；报告按原版契约记录每条路径的 `is_vulnerability`、原因和触发条件。
 
 ### TypeScript 清理
 

@@ -11,7 +11,7 @@ The validator is language-aware only at the source-context boundary: it reads
 the file/line ranges reported by CodeQL and sends the resulting TypeScript or
 JavaScript snippets to the same OpenAI-compatible client used by source
 confirmation. It does not execute target code. A failed model call is printed
-and omitted from the report rather than converted into a classification.
+and omitted from the report rather than converted into a positive or negative result.
 """
 
 import argparse
@@ -28,23 +28,14 @@ from ds_llm_fully_determine_mul import FullyDeterminer
 
 
 PROMPT = """You are a software security expert performing a static audit. Do not run code and do not assume runtime behavior.
-Review the following CodeQL taint path and determine whether it represents a credible exploit chain.
+Review the following CodeQL taint path and determine whether it represents a valid TaintP2X vulnerability. Trace the attacker-controlled data through intermediate logic to the security-sensitive sink, and consider sanitization and whether the sink is actually security-sensitive.
 
-In traditional vulnerability analysis, an exploit chain is attacker-controlled input -> intermediate logic -> security-sensitive sink.
-An LLM-in-the-Loop vulnerability requires the LLM to participate in that chain in at least one of these ways:
-1. The LLM generates code, expressions, SQL, commands, or another executable/interpretable payload.
-2. Exploitation depends on the LLM selecting tools, constructing arguments, routing execution, or triggering a privileged action.
-3. Downstream logic renders, parses, dispatches, or evaluates model output in a security-sensitive way.
-When evidence is insufficient, conservatively return Not-Sure and do not speculate.
-
-Return exactly one JSON object with these fields:
+Return exactly one JSON object using the original TaintP2X result contract:
 {{
+  "issue_number": <issue number>,
   "is_vulnerability": true or false,
-  "classification": "LLM-in-the-Loop", "traditional", or "Not-Sure",
-  "attacker_entry_point": "attacker-controlled entry point; use Not-Sure when unsupported",
-  "exploit_chain": "chain from entry point through intermediate logic to the sink",
   "reason": "brief evidence-based rationale",
-  "sanitized": true or false
+  "triggering_conditions": "how the path can be reached and triggered"
 }}
 
 CodeQL finding:
@@ -94,14 +85,8 @@ def parse_response(response: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("model response is not a JSON object")
     parsed.setdefault("is_vulnerability", False)
-    parsed.setdefault("attacker_entry_point", "Not-Sure")
-    parsed.setdefault("exploit_chain", "Not-Sure")
     parsed.setdefault("reason", "No additional rationale returned.")
-    parsed.setdefault("sanitized", False)
-    if "classification" not in parsed:
-        raise ValueError("model response has no classification")
-    if parsed["classification"] not in {"LLM-in-the-Loop", "traditional", "Not-Sure"}:
-        raise ValueError(f"invalid classification: {parsed['classification']}")
+    parsed.setdefault("triggering_conditions", "")
     return parsed
 
 
@@ -138,7 +123,7 @@ def main() -> None:
             context,
             index,
         )
-        decision = fully_determiner.classify_codeql_finding(
+        decision = fully_determiner.analyze_codeql_finding(
             {"ruleId": finding.get("ruleId"), "message": finding.get("message", {}).get("text", "")},
             context,
             source_decision,
@@ -161,31 +146,28 @@ def main() -> None:
                 continue
             validated.append(item)
             decision = item["decision"]
-            print(f"Finding {index}: {decision['classification']}")
+            print(f"Finding {index}: is_vulnerability={decision['is_vulnerability']}")
     validated.sort(key=lambda item: item["index"])
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     lines = ["# TaintP2X CodeQL 后验证报告", "", f"- SARIF: `{args.sarif}`", f"- 成功后验证: {len(validated)}/{len(findings)}", ""]
-    counts = {name: 0 for name in ("LLM-in-the-Loop", "traditional", "Not-Sure")}
+    vulnerable_count = 0
     for item in validated:
         decision = item["decision"]
-        counts[decision["classification"]] += 1
+        vulnerable_count += bool(decision.get("is_vulnerability"))
         finding = item["finding"]
         lines.extend([
             "## Finding " + str(item["index"]),
             f"- ruleId: `{finding.get('ruleId', '')}`",
             f"- message: {finding.get('message', {}).get('text', '')}",
-            f"- classification: `{decision['classification']}`",
             f"- is_vulnerability: `{decision['is_vulnerability']}`",
-            f"- sanitized: `{decision['sanitized']}`",
-            f"- attacker_entry_point: {decision['attacker_entry_point']}",
-            f"- exploit_chain: {decision['exploit_chain']}",
             f"- reason: {decision['reason']}",
+            f"- triggering_conditions: {decision['triggering_conditions']}",
             "- path locations: " + "; ".join(f"`{loc['uri']}:{loc['line']}`" for loc in item["locations"]),
             "",
         ])
-    lines.extend(["## 统计", "", f"- LLM-in-the-Loop: {counts['LLM-in-the-Loop']}", f"- traditional: {counts['traditional']}", f"- Not-Sure: {counts['Not-Sure']}", ""])
+    lines.extend(["## 统计", "", f"- 有效漏洞: {vulnerable_count}", f"- 非漏洞或无效路径: {len(validated) - vulnerable_count}", ""])
     output.write_text("\n".join(lines), encoding="utf-8")
     print(f"Wrote {len(validated)} validated findings to {output}")
 

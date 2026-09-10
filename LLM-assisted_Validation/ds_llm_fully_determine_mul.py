@@ -52,17 +52,15 @@ class FullyDeterminer:
         if language.lower() in {"typescript", "javascript", "ts", "js"}:
             self.system_prompt = """
 You are the final exploit-chain stage of a static security audit. Do not run
-code. A traditional vulnerability follows attacker-controlled input -> logic
--> security-sensitive sink. An LLM-in-the-Loop vulnerability requires the LLM
-to generate an executable/interpretable artifact, mediate a tool/action, or
-have its output consumed by security-sensitive downstream logic. A vulnerability
-inside an LLM application remains traditional when the LLM does not trigger it.
-Return JSON only with fields: is_vulnerability (boolean), classification
-(LLM-in-the-Loop, traditional, or Not-Sure), attacker_entry_point, exploit_chain,
-reason, and sanitized (boolean). Use Not-Sure when evidence is insufficient.
+code. Analyze whether the reported attacker-controlled data flow reaches a
+security-sensitive sink and constitutes a valid vulnerability. Preserve the
+original TaintP2X result contract.
+Return JSON only with fields: issue_number, is_vulnerability (boolean), reason,
+and triggering_conditions. The reason must cite evidence from the reported
+path; triggering_conditions should describe how the path can be reached.
 """
 
-    def classify_codeql_finding(self, finding, context, source_decision, issue_number):
+    def analyze_codeql_finding(self, finding, context, source_decision, issue_number):
         """Run the original FullyDeterminer stage on one CodeQL finding."""
         prompt = (
             f"{self.system_prompt}\nIssue {issue_number}\n"
@@ -694,4 +692,3 @@ reason, and sanitized (boolean). Use Not-Sure when evidence is insufficient.
             'individual_analysis': analysis_results,
             'chain_analysis': final_analysis
         }
-
