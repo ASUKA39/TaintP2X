@@ -1,5 +1,17 @@
 # TypeScript Port Development Changelog
 
+## 2026-09-11 (reentrant reproduction runner)
+
+- Added `scripts/reproduce_typescript.py`, a reentrant one-command runner that
+  clones and prepares the configured target, invokes the existing TypeScript
+  CodeQL/LLM pipeline, preserves human-readable artifacts, and removes only
+  the temporary checkout and CodeQL database.
+- Added the runner command to `REPRODUCTION_GUIDE.md`; it does not interpret
+  SARIF or generate a separate vulnerability verdict.
+- Verified the runner twice against Flowise `CVE-2026-41265`; the final run
+  completed successfully and confirmed both validation results while leaving
+  only results, validation files, queries, and logs in the run workspace.
+
 ## 2026-09-11 (complete CodeQL path validation)
 
 - Changed generated rules from problem queries to path-problem queries using the stateful flow module's exported `PathGraph` and `flowPath` interface.

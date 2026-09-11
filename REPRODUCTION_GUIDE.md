@@ -13,6 +13,17 @@
 
 配置位于 `config.json`。通用目标只需替换 `target_name`、`repo_url`、`ref`、`expected_commit`、`source_dir` 和 artifact 路径；`install_command` 是目标依赖安装命令，`build_command` 可选。不要把目标仓库或依赖写入镜像。
 
+## 一键重现
+
+准备好 `config.json` 和 `OPENAI_API_KEY` 后，在仓库根目录执行：
+
+```bash
+export OPENAI_API_KEY="<MODEL_API_KEY>"
+python scripts/reproduce_typescript.py --config config.json
+```
+
+脚本会自动创建独立的 `.workspace/reproduction/<run-id>/`，完成目标 clone、依赖安装、完整 CodeQL/LLM 验证，并保留 SARIF、验证结果和运行日志。流程结束后只清理本次 clone 的目标源码和 CodeQL 数据库；结果目录不会被删除。脚本不解析或解释漏洞结论，具体结果直接查看保存的 artifact。
+
 ## Step 1：构建迁移镜像
 
 通用命令：
