@@ -1,18 +1,19 @@
 /**
  * Generated from Taint_Propagation/taint/taint.config.
  * @name User controlled url
- * @kind problem
+ * @kind path-problem
  * @problem.severity warning
  * @id taintp2x/6015
  * @tags security
  */
 import javascript
 import TaintP2XModels
-import TaintP2XFlow
+import TaintP2XFlowQuery
+import TaintP2XFlow::PathGraph
 
-from DataFlow::Node source, DataFlow::Node sink
+from TaintP2XFlow::PathNode source, TaintP2XFlow::PathNode sink
 where
-  TaintP2XFlow::flow(source, sink) and
-  source instanceof TaintP2XModels::FromUrlLLMControlledSource and
-  (sink instanceof TaintP2XModels::SSRFSink)
-select sink, "User controlled data is used to get url"
+  TaintP2XFlow::flowPath(source, sink) and
+  source.getNode() instanceof TaintP2XModels::FromUrlLLMControlledSource and
+  (sink.getNode() instanceof TaintP2XModels::SSRFSink)
+select sink.getNode(), source, sink, "User controlled data is used to get url"

@@ -5,6 +5,7 @@ import requests
 import sys
 import re
 from typing import Dict
+from pathlib import Path
 try:
     from ..Source_Identification.llm_client import LLMClient
 except ImportError:
@@ -319,6 +320,12 @@ Return JSON only with exactly these fields:
 
     @staticmethod
     def _extract_typescript_function(file_path: str, target_line: int) -> str:
+        """Extract the enclosing function from the Compiler API index.
+
+        Source Identification records exact TypeScript function ranges and
+        source text.  Prefer those records; use balanced braces only when an
+        index is unavailable.
+        """
         try:
             with open(file_path, "r", encoding="utf-8") as source_file:
                 lines = source_file.readlines()
@@ -326,6 +333,41 @@ Return JSON only with exactly these fields:
             return f"文件读取失败: {exc}"
         if target_line < 1 or target_line > len(lines):
             return "目标行号超出文件范围"
+        source_path = Path(file_path).resolve()
+        relative_path = None
+        for ancestor in (source_path.parent, *source_path.parents):
+            index_dir = ancestor / "source"
+            if not index_dir.is_dir():
+                continue
+            for index_path in index_dir.glob("analysis_source_*.json"):
+                try:
+                    payload = json.loads(index_path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                records = payload.get("attribute_uses", []) if isinstance(payload, dict) else []
+                if relative_path is None:
+                    relative_path = source_path.relative_to(ancestor).as_posix()
+                matches = []
+                for record in records:
+                    record_file = str(record.get("file", "")).replace("\\", "/")
+                    record_module = str(record.get("module", "")).replace("\\", "/")
+                    same_file = (
+                        record_file == source_path.as_posix()
+                        or record_file.endswith("/" + relative_path)
+                        or record_module == relative_path
+                    )
+                    if not same_file:
+                        continue
+                    try:
+                        start_line = int(record["method_start_line"])
+                        end_line = int(record["method_end_line"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if start_line <= target_line <= end_line and record.get("method_code"):
+                        matches.append((end_line - start_line, record))
+                if matches:
+                    matches.sort(key=lambda item: item[0])
+                    return matches[0][1]["method_code"]
         start = target_line - 1
         while start >= 0:
             line = lines[start]

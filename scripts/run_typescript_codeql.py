@@ -32,7 +32,7 @@ def main():
         sys.path.insert(0, str(root / "LLM-assisted_Validation"))
         from ds_llm_source_determine_mul import SourceDeterminer
         from ds_llm_fully_determine_mul import FullyDeterminer
-        log_dir = root / "llm_validation_logs"
+        log_dir = root / ".workspace" / "llm-validation"
         taint_output = source / ("codeql-runs_" + project_name) / "taint-output.json"
         source_determiner = SourceDeterminer(str(source.parent), str(log_dir), language="typescript")
         fully_determiner = FullyDeterminer(str(source.parent), str(log_dir), language="typescript")

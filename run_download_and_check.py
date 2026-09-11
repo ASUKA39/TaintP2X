@@ -31,6 +31,9 @@ def run_codeql_check(folder, config):
     ))
     query = os.path.join(root, config["codeql_query"])
     codeql_repo = os.path.join(root, config["codeql_repo"])
+    codeql_cache = os.path.join(
+        root, config.get("codeql_cache", ".workspace/codeql/cache")
+    )
     rules_manifest = os.path.join(root, config.get("rules_manifest", "Taint_Propagation/taint/taint.config"))
     rules_generator = os.path.join(root, "scripts", "generate_codeql_rules.py")
     rules_dir = query if os.path.isdir(query) else os.path.dirname(query)
@@ -42,11 +45,13 @@ def run_codeql_check(folder, config):
         cli, "database", "create", database,
         "--language", config.get("codeql_language", "javascript"),
         "--source-root", folder, "--overwrite",
+        "--common-caches", codeql_cache,
     ], check=True, timeout=config.get("codeql_create_timeout", 1200))
     os.makedirs(os.path.dirname(output), exist_ok=True)
     subprocess.run([
         cli, "database", "analyze", database, query,
-        "--search-path", codeql_repo,
+        "--additional-packs", codeql_repo,
+        "--common-caches", codeql_cache,
         "--format", "sarif-latest", "--output", output,
         "--threads", str(config.get("codeql_threads", 0)), "--rerun",
     ], check=True, timeout=config.get("codeql_analyze_timeout", 1200))
@@ -313,7 +318,16 @@ def process_github_repo(repo, download_dir, max_retries=3, language="python", ba
                         taint_output_file = os.path.join(
                             target_dir, "codeql-runs_" + unique_dir_name, "taint-output.json"
                         )
-                        log_dir = os.path.abspath("./llm_validation_logs")
+                        log_dir = (config or {}).get(
+                            "validation_log_dir", ".workspace/llm-validation"
+                        )
+                        if not os.path.isabs(log_dir):
+                            log_dir = os.path.join(
+                                os.path.abspath((config or {}).get("project_root", ".")),
+                                log_dir,
+                            )
+                        else:
+                            log_dir = os.path.abspath(log_dir)
                         source_determiner = SourceDeterminer(os.path.abspath(download_dir), log_dir, language=language)
                         fully_determiner = FullyDeterminer(os.path.abspath(download_dir), log_dir, language=language)
                         source_determiner.process_project(unique_dir_name, taint_output_file)

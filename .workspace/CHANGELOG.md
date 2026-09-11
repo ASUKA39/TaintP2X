@@ -1,5 +1,20 @@
 # TypeScript Port Development Changelog
 
+## 2026-09-11 (complete CodeQL path validation)
+
+- Changed generated rules from problem queries to path-problem queries using the stateful flow module's exported `PathGraph` and `flowPath` interface.
+- Renamed the flow library entry to `TaintP2XFlowQuery.qll` so the exported `TaintP2XFlow::PathGraph` resolves without colliding with the library filename.
+- Prepared an independent CodeQL 2.23.2 CLI and official QL checkout under this repository's `.workspace/codeql/`; no other tool workspace is used.
+- Re-ran Flowise `CVE-2026-41265` end to end. Both findings contain 11-node source-to-sink paths in SARIF and `taint-output.json`; SourceDeterminer retained issue 2 and FullyDeterminer generated the final analysis result.
+- Rewrote `REPRODUCTION_GUIDE.md` to contain only the TypeScript/CodeQL reproduction procedure and recorded the verified result.
+- Moved validation artifacts under `.workspace/llm-validation/` so all reproduction outputs stay in the documented workspace.
+- Unified the legacy batch CodeQL entry point with the same configurable
+  `.workspace/llm-validation` directory used by the TypeScript entry point.
+- Fixed TypeScript Source/Fully validation context extraction by reusing the
+  Compiler API analysis index instead of treating nested object literals as
+  function declarations. A fresh Flowise run now confirms both the Airtable
+  and CSV source-to-code-execution paths.
+
 ## 2026-09-11 (CVE-2026-41265 reproduction)
 
 - Switched the TypeScript reproduction target to Flowise `CVE-2026-41265` at `flowise@2.2.6`, re-cloned the pinned commit, and installed dependencies.

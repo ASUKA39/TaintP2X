@@ -19,7 +19,7 @@ module TaintP2XProjectSources {
     or
     (
       function.getFile().getRelativePath() = "packages/components/nodes/agents/AutoGPT/AutoGPT.ts" and
-      function.getName() = "async" and
+      function.getName() = "anonymous" and
       function.getLocation().getStartLine() = 214 and
       function.getLocation().getEndLine() = 222
     )

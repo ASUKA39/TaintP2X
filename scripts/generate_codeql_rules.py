@@ -30,21 +30,22 @@ def render(rule: dict, output: Path) -> None:
     text = f'''/**
  * Generated from Taint_Propagation/taint/taint.config.
  * @name {rule.get("name", "TaintP2X rule")}
- * @kind problem
+ * @kind path-problem
  * @problem.severity warning
  * @id taintp2x/{code}
  * @tags security
  */
 import javascript
 import TaintP2XModels
-import TaintP2XFlow
+import TaintP2XFlowQuery
+import TaintP2XFlow::PathGraph
 
-from DataFlow::Node source, DataFlow::Node sink
+from TaintP2XFlow::PathNode source, TaintP2XFlow::PathNode sink
 where
-  TaintP2XFlow::flow(source, sink) and
-  source instanceof TaintP2XModels::{source} and
-  ({sink_expr.replace('sink.getNode()', 'sink')})
-select sink, {ql_string(message)}
+  TaintP2XFlow::flowPath(source, sink) and
+  source.getNode() instanceof TaintP2XModels::{source} and
+  ({sink_expr.replace('sink.getNode()', 'sink.getNode()')})
+select sink.getNode(), source, sink, {ql_string(message)}
 '''
     output.write_text(text, encoding="utf-8")
 

@@ -14,6 +14,7 @@
 - [x] Rebuild the TypeScript image and reproduce the Flowise example from a clean workspace.
 - [x] Reconcile `REPRODUCTION_GUIDE.md`, checklist, and compliance audit with verified behavior.
 - [x] Re-run Flowise `CVE-2026-41265` end to end: 61 candidates, 23 confirmed Sources, 28 CodeQL rules, 2 `taintp2x/5001` findings, and original Source/Full validation.
-- [ ] Evaluate CodeQL path-flow output versus the original validator trace contract; this run's SARIF did not include thread-flow details.
+- [x] Preserve CodeQL path-flow output through the original validator trace contract; verified two 11-node thread flows and a completed FullyDeterminer result.
 - [x] Remove embedded provider/model configuration from legacy LLM helper code.
 - [x] Remove the migration-only Source candidate limit and artifact-based stage skip.
+- [x] 修正 TypeScript 后验证函数上下文提取：优先复用 `analysis_source_<project>.json` 中由 Compiler API 记录的 `method_code` 与函数范围，避免把对象字面量误判为函数边界；为嵌套调用位置补充回归测试。

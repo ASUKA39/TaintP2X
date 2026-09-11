@@ -8,8 +8,10 @@
   "codeql_query": "CodeQL_Queries/rules",
   "rules_manifest": "Taint_Propagation/taint/taint.config",
   "generated_sources": "CodeQL_Queries/TaintP2XProjectSources.qll",
-  "codeql_cli": ".workspace/codeql-cli-2.23.2/codeql/codeql",
-  "codeql_repo": ".workspace/codeql-repo",
+  "codeql_cli": ".workspace/codeql/codeql/codeql",
+  "codeql_repo": ".workspace/codeql/repo",
+  "codeql_cache": ".workspace/codeql/cache",
+  "validation_log_dir": ".workspace/llm-validation",
   "install_command": "pnpm install --frozen-lockfile",
   "build_command": "",
   "image": "taintp2x:typescript"
