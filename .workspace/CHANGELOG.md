@@ -52,3 +52,7 @@
   was created successfully, and the run produced zero CodeQL findings and zero
   issue-level validation artifacts. This confirms the end-to-end execution
   path; the selected Flowise run does not itself require a finding.
+- Removed the TypeScript-only Source confirmation limit and the driver shortcut
+  that skipped Source Identification when old artifacts existed. The migrated
+  driver now follows an all-or-nothing run and regenerates the complete Source
+  analysis, confirmation, and model artifacts before every CodeQL run.

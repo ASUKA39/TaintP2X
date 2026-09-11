@@ -177,12 +177,12 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   -e OPENAI_EXTRA_BODY='{"thinking":{"type":"disabled"}}' \
   taintp2x:typescript bash -lc \
   'python -m Source_Identification.confirm_typescript_source \
-    <SOURCE_DIR> [--limit <N>]'
+    <SOURCE_DIR>'
 ```
 
-确认阶段沿用 `Source_Identification/llm_client.py` 的 OpenAI-compatible 适配；适配代码仍在该文件，替换其他远程模型时只需调整环境变量或该通用请求适配。确认完成后，`make_codeql_sources.py` 将 `is_llm_call=true` 的记录输出成可审计 Source 清单。
+确认阶段沿用 `Source_Identification/llm_client.py` 的 OpenAI-compatible 适配；适配代码仍在该文件，替换其他远程模型时只需调整环境变量或该通用请求适配。确认阶段处理 Source Identification 产生的全部候选，不提供截断选项。确认完成后，`make_codeql_sources.py` 将 `is_llm_call=true` 的记录输出成可审计 Source 清单。
 
-本次测试使用 DeepSeek 官方 API（`https://api.deepseek.com`、模型 `deepseek-v4-flash`、thinking disabled），对 3 个候选进行了实际确认，生成：
+确认结果生成于：
 
 ```text
 .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/llm_analysis_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json
@@ -199,7 +199,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
     .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json'
 ```
 
-本次确认实际处理 3 个候选，生成了上述分析文件和 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json`。
+本步骤生成上述分析文件和 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json`。已有同名文件会被本次完整结果覆盖，不能用其跳过确认阶段。
 
 ### TypeScript Step 7：创建数据库并运行 CodeQL 检测
 
@@ -214,7 +214,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   'python scripts/run_typescript_codeql.py --config config.json'
 ```
 
-`scripts/run_typescript_codeql.py` 会在已有 Source Identification artifact 时跳过确认阶段，按 `taint.config` 生成原版 500x/600x 规则查询，按配置创建数据库并写出 SARIF，同时将路径适配为原版验证器的 `taint-output.json`。Source、Sink、Transform 和规则身份由迁移后的 CodeQL 模型实现，不依赖仓库名或具体 CVE。
+`scripts/run_typescript_codeql.py` 每次都会完整执行 Source Identification、模型确认、Source 生成、CodeQL 建库和查询，不根据已有 artifact 跳过阶段。它按 `taint.config` 生成原版 500x/600x 规则查询，写出 SARIF，并将路径适配为原版验证器的 `taint-output.json`。Source、Sink、Transform 和规则身份由迁移后的 CodeQL 模型实现，不依赖仓库名或具体 CVE。
 
 本次实际运行使用：
 

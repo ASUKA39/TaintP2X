@@ -14,3 +14,4 @@
 - [x] Rebuild the TypeScript image and reproduce the Flowise example from a clean workspace.
 - [x] Reconcile `REPRODUCTION_GUIDE.md`, checklist, and compliance audit with verified behavior.
 - [x] Remove embedded provider/model configuration from legacy LLM helper code.
+- [x] Remove the migration-only Source candidate limit and artifact-based stage skip.
