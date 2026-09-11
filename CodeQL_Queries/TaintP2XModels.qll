@@ -52,6 +52,14 @@ module TaintP2XModels {
         TaintP2XProjectSources::isConfirmedLLMFunction(function.getFunction()) and
         this = function.getAReturn()
       )
+      or
+      this = API::moduleImport("langchain/chains")
+        .getMember("LLMChain")
+        .getInstance()
+        .getMember("call")
+        .getACall()
+        .getReturn()
+        .asSource()
     }
 
     override string getKind() { result = "LLMControlled" }
@@ -85,6 +93,13 @@ module TaintP2XModels {
         this = execution.getACommandArgument() and
         execution.isShellInterpreted(this)
       )
+      or
+      this = API::moduleImport("pyodide")
+        .getMember("loadPyodide")
+        .getReturn()
+        .getMember("runPythonAsync")
+        .getACall()
+        .getArgument(0)
     }
 
     override string getCategory() { result = "RemoteCodeExecution" }

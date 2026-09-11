@@ -1,5 +1,11 @@
 # TypeScript Port Development Changelog
 
+## 2026-09-11 (CVE-2026-41265 reproduction)
+
+- Switched the TypeScript reproduction target to Flowise `CVE-2026-41265` at `flowise@2.2.6`, re-cloned the pinned commit, and installed dependencies.
+- Added generic `LLMChain` source and Pyodide `runPythonAsync` sink modeling; complete scan produced 61 candidates, 23 confirmed LLM-output functions, and 2 `taintp2x/5001` findings.
+- Ran the original Source/Fully LLM validation stages for both findings; responses are preserved under `llm_validation_logs/FlowiseAI__Flowise_CVE-2026-41265_2.2.6/`.
+
 ## 2026-09-10
 
 - Established the corrective TDD worklist from `TYPESCRIPT_MIGRATION_COMPLIANCE_AUDIT.md` at commit `f8657e0`.

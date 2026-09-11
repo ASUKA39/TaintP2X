@@ -62,7 +62,7 @@ docker run --rm --platform linux/amd64 taintp2x:baseline bash -lc '
 
 通用配置文件是 `config.json`，至少提供目标仓库 URL、固定 ref/commit、源码目录、CodeQL 数据库目录、查询路径、CodeQL CLI/QL pack 路径和目标依赖安装命令。所有源码、数据库、Source Identification 输出和 SARIF 均放在 `.workspace/`；镜像构建上下文不会复制 `.workspace`。
 
-本次示例的目标是 `FlowiseAI/Flowise` 的 `2.2.6`（commit `da04289ecf1c25dc4894737e9d00eac9f6d9ec7d`），配置文件为 `config.json`，源码目录为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6`，规则查询目录为 `CodeQL_Queries/rules`。
+本次示例的目标是 `FlowiseAI/Flowise` 的 `2.2.6`（commit `da04289ecf1c25dc4894737e9d00eac9f6d9ec7d`），配置文件为 `config.json`，源码目录为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6`，规则查询目录为 `CodeQL_Queries/rules`。
 
 ### TypeScript Step 1：构建独立迁移镜像
 
@@ -114,7 +114,7 @@ test "$(git -C "$PROJECT_DIR" rev-parse HEAD)" = "<EXPECTED_COMMIT>"
 本次目标已经获取并固定：
 
 ```bash
-TARGET_DIR=".workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6"
+TARGET_DIR=".workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6"
 git clone --branch flowise@2.2.6 --depth 1 \
   https://github.com/FlowiseAI/Flowise "$TARGET_DIR"
 test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = \
@@ -130,7 +130,7 @@ test "$(git -C "$TARGET_DIR" rev-parse HEAD)" = \
 ```bash
 docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD",dst=/taintp2x \
-  --workdir /taintp2x/.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6 \
+  --workdir /taintp2x/.workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6 \
   taintp2x:typescript bash -lc 'pnpm install --frozen-lockfile'
 ```
 
@@ -157,11 +157,11 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD",dst=/taintp2x \
   --workdir /taintp2x taintp2x:typescript bash -lc \
   'node Source_Identification/analyze_typescript_sources.js \
-    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6 \
-    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/analysis_source_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json'
+    .workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6 \
+    .workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6/source/analysis_source_FlowiseAI__Flowise_CVE-2026-41265_2.2.6.json'
 ```
 
-本次扫描输出 81 个 TypeScript Source 候选，结果文件为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/analysis_source_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json`。
+本次扫描输出 61 个 TypeScript Source 候选，结果文件为 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6/source/analysis_source_FlowiseAI__Flowise_CVE-2026-41265_2.2.6.json`。
 
 ### TypeScript Step 6：模型确认并生成 CodeQL Source 清单
 
@@ -185,7 +185,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
 确认结果生成于：
 
 ```text
-.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/llm_analysis_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json
+.workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6/source/llm_analysis_FlowiseAI__Flowise_CVE-2026-41265_2.2.6.json
 ```
 
 随后在同一个容器中生成 CodeQL Source 清单：
@@ -195,11 +195,11 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --mount type=bind,src="$PWD",dst=/taintp2x \
   --workdir /taintp2x taintp2x:typescript bash -lc \
   'python Source_Identification/make_codeql_sources.py \
-    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/llm_analysis_FlowiseAI__Flowise_CVE-2025-55346_2.2.6.json \
-    .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json'
+    .workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6/source/llm_analysis_FlowiseAI__Flowise_CVE-2026-41265_2.2.6.json \
+    .workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6/source/codeql_sources.json'
 ```
 
-本步骤生成上述分析文件和 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6/source/codeql_sources.json`。已有同名文件会被本次完整结果覆盖，不能用其跳过确认阶段。
+本步骤生成上述分析文件和 `.workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6/source/codeql_sources.json`。已有同名文件会被本次完整结果覆盖，不能用其跳过确认阶段。
 
 ### TypeScript Step 7：创建数据库并运行 CodeQL 检测
 
@@ -228,7 +228,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
     --config config.json'
 ```
 
-本次测试按配置重新创建了 `.workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2025-55346_2.2.6` 数据库，输出 `.workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif`。
+本次测试按配置重新创建了 `.workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2026-41265_2.2.6` 数据库，输出 `.workspace/codeql-results/FlowiseAI__Flowise_CVE-2026-41265_2.2.6.sarif`。
 
 ### TypeScript 结果格式和校验
 
@@ -236,7 +236,7 @@ SARIF 是标准 JSON；`runs[0].results` 是告警列表，`codeFlows` 是可选
 
 ```bash
 jq '{count:(.runs[0].results|length), results:[.runs[0].results[]|{ruleId,message:.message.text,file:.locations[0].physicalLocation.artifactLocation.uri,line:.locations[0].physicalLocation.region.startLine}]}' \
-  .workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif
+  .workspace/codeql-results/FlowiseAI__Flowise_CVE-2026-41265_2.2.6.sarif
 ```
 
 本次规则查询按原版规则分别输出 SARIF 告警；查询本身不包含该仓库或该漏洞的专用逻辑。若需要新增 SDK 或 Sink，只修改对应 CodeQL 模型并重新生成规则/Source 模块。
@@ -245,16 +245,16 @@ jq '{count:(.runs[0].results|length), results:[.runs[0].results[]|{ruleId,messag
 
 CodeQL 只替换 Pysa 的静态污点后端；`scripts/run_typescript_codeql.py` 将 SARIF 路径适配为原版 `taint-output.json`，随后调用 `SourceDeterminer` 和 `FullyDeterminer`。两阶段继续写入原版 issue 目录及 `response_output.json`、`analysis_results.json` 等 artifact。该阶段是静态审计，不运行目标代码；模型调用失败的条目不写入伪造结果。
 
-本次 Flowise 运行完成了 CodeQL 数据库创建、28 条规则求解和 SARIF 适配；该数据库未产生可供后验证的 CodeQL finding，因此没有生成 issue 级 LLM 验证结果。若后续运行产生 finding，原版验证器会在 `llm_validation_logs/<TARGET_NAME>/<ISSUE>/` 下写入 `issue_data.json`、`file_paths_and_lines.json`、`context_output.txt`、`response_output.json`、`trace_chain.log` 和 `analysis_results.json`。模型调用失败时不写入伪造的最终判断。
+本次 Flowise 运行完成了 CodeQL 数据库创建、28 条规则求解和 SARIF 适配，共产生 2 条 `taintp2x/5001` finding：`AirtableAgent.ts:184` 和同类 `CSVAgent.ts:191`。原版 Source/Full 验证阶段均实际执行并保存了两个 issue 的响应；由于 CodeQL SARIF 未提供可供验证器消费的完整 thread flow，Source 验证器仅看到 `runPythonAsync` 的 Sink 片段，保守地未将其确认成最终漏洞。该结果不影响静态 CodeQL 已检出目标链路的事实；后验证 artifact 位于 `llm_validation_logs/FlowiseAI__Flowise_CVE-2026-41265_2.2.6/{1,2}/`。模型调用失败时不写入伪造的最终判断。
 
 ### TypeScript 清理
 
 回收本次容器使用 `docker run --rm` 自动完成；宿主机 `.workspace` 中的源码、数据库和 SARIF 是需要保留的实验 artifact。确认不再需要时，只删除当前目标的精确目录，不删除共享的 CodeQL CLI/QL pack checkout：
 
 ```bash
-rm -rf .workspace/project-sources/FlowiseAI__Flowise_CVE-2025-55346_2.2.6 \
-       .workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2025-55346_2.2.6 \
-       .workspace/codeql-results/FlowiseAI__Flowise_CVE-2025-55346_2.2.6.sarif
+rm -rf .workspace/project-sources/FlowiseAI__Flowise_CVE-2026-41265_2.2.6 \
+       .workspace/codeql-dbs/FlowiseAI__Flowise_CVE-2026-41265_2.2.6 \
+       .workspace/codeql-results/FlowiseAI__Flowise_CVE-2026-41265_2.2.6.sarif
 ```
 
 ## Step 2：创建实验容器并获取目标源码

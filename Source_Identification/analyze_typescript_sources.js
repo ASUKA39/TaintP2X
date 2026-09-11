@@ -46,13 +46,13 @@ const sdkDefinitions = [
   { package: '@google/genai', constructors: ['GoogleGenAI'], factories: [], functions: [] },
   {
     packagePrefix: '@langchain/',
-    constructors: ['ChatOpenAI', 'AzureChatOpenAI', 'OpenAI', 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'ChatGroq', 'ChatMistralAI', 'ChatCohere'],
+    constructors: ['LLMChain', 'ChatOpenAI', 'AzureChatOpenAI', 'OpenAI', 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'ChatGroq', 'ChatMistralAI', 'ChatCohere'],
     factories: [],
     functions: []
   },
   {
     packagePrefix: 'langchain/',
-    constructors: ['ChatOpenAI', 'AzureChatOpenAI', 'OpenAI', 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'ChatGroq', 'ChatMistralAI', 'ChatCohere'],
+    constructors: ['LLMChain', 'ChatOpenAI', 'AzureChatOpenAI', 'OpenAI', 'ChatAnthropic', 'ChatGoogleGenerativeAI', 'ChatGroq', 'ChatMistralAI', 'ChatCohere'],
     factories: [],
     functions: []
   },

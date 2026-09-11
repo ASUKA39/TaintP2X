@@ -20,9 +20,9 @@
 | 规模参考 | GitHub 仓库大小约 83 MB，约 55k stars |
 | 测试版本 | `flowise@2.2.6` |
 | 固定提交 | `da04289ecf1c25dc4894737e9d00eac9f6d9ec7d` |
-| 漏洞 | `CVE-2025-55346`，`CWE-94`，CVSS `9.8` |
-| 漏洞描述 | 用户可控输入流入不安全的动态 `Function` 构造器，导致网络攻击者执行任意 JavaScript 代码。 |
-| 选择理由 | 仓库规模适中，版本和提交可固定，漏洞是清晰的用户输入到动态代码执行 Sink 的 TypeScript 数据流，适合验证迁移后的 Source、Sink 和 CodeQL 路径分析。 |
+| 漏洞 | `CVE-2026-41265`，`CWE-77`，CVSS `9.8` |
+| 漏洞描述 | 未认证攻击者通过 prompt injection 诱导 LLM 生成 Python 代码，该代码随后传入 Pyodide 的 `runPythonAsync` 执行，导致服务器任意命令执行。 |
+| 选择理由 | 仓库规模适中，版本和提交可固定，漏洞包含 LLM 输出到代码执行的 P2Xi 利用链，适合验证迁移后的 Source、Sink 和 CodeQL 路径分析。 |
 
 ### 迁移测试模型
 
